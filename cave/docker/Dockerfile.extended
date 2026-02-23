@@ -1,0 +1,31 @@
+# PAIA Extended Image
+# Extends paia-agent:latest with guru loop + MCP support
+#
+# Base (paia-agent:latest): Claude CLI + tmux + handoff server
+# This layer adds: MCP configs, guru instruction support, state persistence
+
+FROM paia-agent:latest
+
+# Install additional MCP dependencies
+COPY requirements-base.txt /tmp/requirements-base.txt
+RUN pip install --no-cache-dir -r /tmp/requirements-base.txt || true
+
+# Create state directory for guru loop
+RUN mkdir -p /agent/state /agent/.config/claude-code
+
+# Copy base MCP config
+COPY mcp-config.base.json /agent/.claude/mcp-config.json
+
+# Copy updated handoff server (overlays base image version)
+COPY container_handoff.py /usr/local/bin/handoff_server.py
+
+# Copy guru-aware entrypoint (wraps original)
+COPY entrypoint-guru.sh /usr/local/bin/entrypoint-guru.sh
+RUN chmod +x /usr/local/bin/entrypoint-guru.sh
+
+# State directory for host monitoring
+VOLUME ["/agent/state"]
+
+ENV GURU_INSTRUCTION=""
+
+CMD ["/usr/local/bin/entrypoint-guru.sh"]

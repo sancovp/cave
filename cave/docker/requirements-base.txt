@@ -1,0 +1,17 @@
+# Base PAIA MCP requirements
+# These are the core MCPs for self-organizing PAIAs
+
+# MCP SDK
+mcp
+
+# Base MCPs - install from local paths or PyPI when available
+# skillmanager-treeshell
+# gnosys-treeshell
+# autopoiesis-mcp
+# self-claude-mcp
+
+# Common dependencies
+pydantic>=2.0
+httpx
+uvicorn
+fastapi

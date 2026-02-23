@@ -1,0 +1,33 @@
+{
+  "mcpServers": {
+    "skillmanager-treeshell": {
+      "command": "python3",
+      "args": ["-m", "skillmanager_treeshell"],
+      "env": {
+        "SKILLS_DIR": "/agent/.claude/skills",
+        "HEAVEN_DATA_DIR": "/agent/state"
+      }
+    },
+    "gnosys_kit": {
+      "command": "python3",
+      "args": ["-m", "gnosys_treeshell"],
+      "env": {
+        "STRATA_CONFIG": "/agent/.config/strata/servers.json"
+      }
+    },
+    "autopoiesis": {
+      "command": "python3",
+      "args": ["-m", "autopoiesis_mcp"],
+      "env": {
+        "AUTOPOIESIS_STATE_DIR": "/agent/state/autopoiesis"
+      }
+    },
+    "self-claude": {
+      "command": "python3",
+      "args": ["-m", "self_claude_mcp"],
+      "env": {
+        "TMUX_SESSION": "claude"
+      }
+    }
+  }
+}
