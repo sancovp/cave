@@ -8,7 +8,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from ..automation import Automation, AutomationSchema, AutomationRegistry
-from ..channel import Channel
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +17,7 @@ class AutomationMixin:
 
     Provides:
         - registry: AutomationRegistry for loading/registering automations
-        - add_automation(): register with channels
+        - add_automation(): register from args
         - fire_automation(): fire by name
         - fire_all_due(): fire everything that's due (called by Heart)
     """
@@ -36,7 +35,7 @@ class AutomationMixin:
         schedule: Optional[str] = None,
         prompt_template: Optional[str] = None,
         code_pointer: Optional[str] = None,
-        channels: Optional[List[Channel]] = None,
+        code_args: Optional[dict] = None,
         priority: int = 5,
         tags: Optional[list] = None,
     ) -> Dict[str, Any]:
@@ -47,10 +46,11 @@ class AutomationMixin:
             schedule=schedule,
             prompt_template=prompt_template,
             code_pointer=code_pointer,
+            code_args=code_args or {},
             priority=priority,
             tags=tags or [],
         )
-        auto = Automation(schema=schema, channels=channels or [])
+        auto = Automation(schema=schema)
         self.automation_registry.register(auto)
         self.automation_registry.save_schema(schema)
         logger.info(f"Added automation: {name}")
@@ -59,6 +59,9 @@ class AutomationMixin:
     def remove_automation(self, name: str) -> Dict[str, Any]:
         """Remove an automation by name."""
         if self.automation_registry.unregister(name):
+            json_path = self.automation_registry._dir / f"{name}.json"
+            if json_path.exists():
+                json_path.unlink()
             return {"status": "removed", "automation": name}
         return {"error": f"Automation '{name}' not found"}
 
@@ -88,7 +91,11 @@ class AutomationMixin:
             "automations": {
                 name: {
                     "schedule": auto.schedule,
-                    "channels": [c.channel_type() for c in auto.channels],
+                    "enabled": auto.schema.enabled,
+                    "last_run": auto.last_run.isoformat() if auto.last_run else None,
+                    "run_count": auto.run_count,
+                    "code_pointer": auto.schema.code_pointer,
+                    "has_prompt": bool(auto.schema.prompt_template),
                 }
                 for name, auto in self.automation_registry.automations.items()
             },

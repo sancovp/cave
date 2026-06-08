@@ -29,6 +29,54 @@ class MainAgentConfig(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
+class HeartbeatConfig(BaseModel):
+    """Heartbeat configuration for an agent."""
+    enabled: bool = False
+    interval_seconds: float = 300.0
+    prompt: str = "Heartbeat: check status, report."
+    separate_conversation: bool = False  # True = heartbeat gets its own transcript
+
+
+class CaveAgentEntry(BaseModel):
+    """Configuration for one agent in the CAVE registry.
+
+    CAVE_REFACTOR Stage 5: Replaces MainAgentConfig (singular) with
+    a list of these entries in CAVEConfig.agents.
+
+    Each entry defines: what type of CAVE agent, what runtime it wraps,
+    and what conversations (channels) it has.
+    """
+    name: str  # e.g., "conductor", "gnosys", "autobiographer", "openclaw"
+    agent_type: Literal["chat", "code", "claw", "service", "remote"] = "chat"
+
+    # Channel mode preset — determines default modes on all channels
+    # complete_mirror: every channel gets mirror+broadcast (ChatAgent default)
+    # notify: channels get broadcast only — lifecycle events (ServiceAgent default)
+    # mixed: each channel defines its own modes via "modes" key in channel config
+    channel_mode: Literal["complete_mirror", "notify", "mixed"] = "complete_mirror"
+
+    # Runtime config — what the agent actually wraps
+    # For code agents: command + tmux
+    command: str = ""
+    tmux_session: str = ""
+    working_dir: str = "."
+
+    # Channel config — the conversations this agent has
+    # Keys are conversation names, values are channel type + config
+    # e.g., {"main": {"type": "discord", "channel_id": "123", "modes": ["mirror", "broadcast"]},
+    #        "heartbeat": {"type": "discord", "channel_id": "123"}}
+    channels: Dict[str, Dict[str, Any]] = Field(default_factory=dict)
+
+    # Heartbeat config — Heart adds a tick for this agent if enabled
+    heartbeat: Optional[HeartbeatConfig] = None
+
+    # Hooks active on this agent
+    active_hooks: Dict[str, List[str]] = Field(default_factory=dict)
+
+    # Agent-specific metadata
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
 class PAIAState(BaseModel):
     """Runtime state of a PAIA (Personal AI Agent)."""
 

@@ -7,7 +7,8 @@ import logging
 import time
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
-from ..capability_resolver import get_capability_context_for_hook
+# DISABLED: see comment in dispatch_hook — capability_resolver was firing RAG on every hook
+# from ..capability_resolver import get_capability_context_for_hook
 
 if TYPE_CHECKING:
     from ..config import CAVEConfig
@@ -88,11 +89,11 @@ class HookRouterMixin:
         additional_context = []
         hooks_called = 0
 
-        # Inject capability recommendations via RAG
-        rag_enabled = self._hook_state.get("rag_enabled", True)
-        cap_context = get_capability_context_for_hook(hook_type_lower, payload, enabled=rag_enabled)
-        if cap_context:
-            additional_context.append(cap_context)
+        # DISABLED: Was calling flight_predictor/unified_rag on EVERY hook dispatch.
+        # Hallucinatory — imports capability_predictor.unified_rag (which is flight predictor)
+        # and fires RAG queries on every PreToolUse and Stop, burning tokens/CPU.
+        # If re-enabled: ONLY in base flight, ONLY for skill + tool recommendations.
+        # Might not even want this — just give the continuation prompt instead.
 
         for hook in hooks:
             try:

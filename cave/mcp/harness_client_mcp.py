@@ -9,6 +9,7 @@ from fastmcp import FastMCP
 
 mcp = FastMCP("paia-harness", "Control PAIA harness (hooks, persona, self commands)")
 
+# TRIGGERS: PAIA harness at :8765 via HTTP GET/POST
 HARNESS_URL = os.environ.get("PAIA_HARNESS_URL", "http://localhost:8765")
 
 

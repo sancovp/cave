@@ -34,8 +34,16 @@ except ImportError as e:
     HeavenAgentArgs = None
     HeavenHermesArgs = None
 
-# Proven MiniMax config (confirmed working Feb 24 2026)
-MINIMAX_MODEL = "MiniMax-M2.5-highspeed"
+# Model from user config — no hardcoded values
+import json as _json
+_ra_cfg_path = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "conductor_agent_config.json"
+_ra_cfg = {}
+if _ra_cfg_path.exists():
+    try:
+        _ra_cfg = _json.loads(_ra_cfg_path.read_text())
+    except (ValueError, OSError):
+        pass
+MINIMAX_MODEL = _ra_cfg.get("model", "")
 MINIMAX_HEAVEN_INPUTS = None
 if SDNA_AVAILABLE:
     MINIMAX_HEAVEN_INPUTS = HeavenInputs(
@@ -59,7 +67,7 @@ class RemoteAgentConfig:
     system_prompt: str = ""
     goal_template: str = ""
     max_turns: int = 10
-    model: str = MINIMAX_MODEL if SDNA_AVAILABLE else "MiniMax-M2.5-highspeed"
+    model: str = MINIMAX_MODEL
     working_directory: Optional[str] = None
     use_claude: bool = False  # Set True to use Claude instead of MiniMax
 

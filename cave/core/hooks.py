@@ -115,7 +115,7 @@ class ScriptHookAdapter:
                 input=json.dumps(payload),
                 capture_output=True,
                 text=True,
-                timeout=5,  # Don't let hooks hang forever
+                timeout=600,  # 10 minutes — dragonbones compilation can be slow
             )
 
             if result.returncode == 2:

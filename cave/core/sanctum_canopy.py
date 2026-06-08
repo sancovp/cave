@@ -7,6 +7,7 @@ Population: ritual due → create Canopy Human-Only item
 Completion: "done X" → lookup canopy item_id → mark_complete → streak++
 Map file: /tmp/heaven_data/sanctum_canopy_map.json (daily reset)
 """
+# CONNECTS_TO: /tmp/heaven_data/sanctum_canopy_map.json (read/write) — daily ritual-to-canopy mapping
 import asyncio
 import json
 import logging

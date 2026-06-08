@@ -14,8 +14,11 @@ logger = logging.getLogger(__name__)
 
 # File paths
 OMNISANC_STATE_FILE = Path("/tmp/heaven_data/omnisanc_core/.course_state")
+# TRIGGERS: OMNISANC disable via file write to .omnisanc_disabled
 OMNISANC_DISABLED_FILE = Path("/tmp/heaven_data/omnisanc_core/.omnisanc_disabled")
+# CONNECTS_TO: /tmp/metabrainhook_state.txt (read/write) — also accessed by OMNISANC daemon
 METABRAINHOOK_STATE_FILE = Path("/tmp/metabrainhook_state.txt")
+# CONNECTS_TO: /tmp/heaven_data/metabrainhook_config.json (read/write) — metabrainhook prompt config
 METABRAINHOOK_PROMPT_FILE = Path("/tmp/heaven_data/metabrainhook_config.json")
 
 

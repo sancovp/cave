@@ -71,11 +71,13 @@ def check_safety(entry):
 
 
 def main():
+    # CONNECTS_TO: /tmp/tmp7kf1_shg.json (read) — temp input for coglog review
     with open("/tmp/tmp7kf1_shg.json") as f:
         entries = json.load(f)
 
     results = [check_safety(entry) for entry in entries]
 
+    # CONNECTS_TO: /tmp/coglog_review.json (write) — coglog safety review results
     with open("/tmp/coglog_review.json", "w") as f:
         json.dump(results, f, indent=2)
 

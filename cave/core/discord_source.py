@@ -4,8 +4,11 @@ Polls a single private Discord channel via REST API for new messages.
 Converts to WorldEvents that flow through Heart → World → route_message → Ears.
 
 Uses shared config from discord_config.load_discord_config().
+Persists last_message_id to disk so duplicate messages are not re-emitted on daemon restart.
 """
+import json
 import logging
+import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -16,6 +19,8 @@ from .discord_config import load_discord_config
 from .world import EventSource, WorldEvent
 
 logger = logging.getLogger(__name__)
+
+_CURSOR_FILE = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "discord_cursor.json"
 
 DISCORD_API = "https://discord.com/api/v10"
 
@@ -36,8 +41,8 @@ class DiscordChannelSource(EventSource):
     ):
         super().__init__(name, enabled)
         self._config: Dict[str, Any] = load_discord_config(config_path) if config_path else load_discord_config()
-        self._last_message_id: Optional[str] = None
-        self._seeded: bool = False
+        self._last_message_id: Optional[str] = self._load_cursor()
+        self._seeded: bool = self._last_message_id is not None
         self._total_messages: int = 0
         self._validate_config()
 
@@ -53,6 +58,25 @@ class DiscordChannelSource(EventSource):
         if not self._config.get("private_chat_channel_id"):
             logger.error("Discord config missing private_chat_channel_id — source disabled")
             self.enabled = False
+
+    def _load_cursor(self) -> Optional[str]:
+        """Load persisted last_message_id from disk."""
+        if _CURSOR_FILE.exists():
+            try:
+                data = json.loads(_CURSOR_FILE.read_text())
+                cursor = data.get("last_message_id")
+                if cursor:
+                    logger.info("Discord: restored cursor %s", cursor)
+                    return cursor
+            except (json.JSONDecodeError, IOError):
+                pass
+        return None
+
+    def _save_cursor(self) -> None:
+        """Persist last_message_id to disk."""
+        if self._last_message_id:
+            _CURSOR_FILE.parent.mkdir(parents=True, exist_ok=True)
+            _CURSOR_FILE.write_text(json.dumps({"last_message_id": self._last_message_id}))
 
     @property
     def _token(self) -> str:
@@ -103,12 +127,14 @@ class DiscordChannelSource(EventSource):
         events = []
         for msg in messages:
             author = msg.get("author", {})
-            # Completely ignore bot messages — don't even advance cursor
-            if author.get("bot"):
-                continue
-
             msg_id = msg["id"]
-            if self._last_message_id and msg_id <= self._last_message_id:
+
+            # Always advance cursor past any message to avoid getting stuck
+            if not self._last_message_id or msg_id > self._last_message_id:
+                self._last_message_id = msg_id
+
+            # Skip bot messages (CartON etc) — cursor advanced but no event emitted
+            if author.get("bot"):
                 continue
 
             content = msg.get("content", "")
@@ -127,8 +153,10 @@ class DiscordChannelSource(EventSource):
                     "discord_username": username,
                 },
             ))
-            self._last_message_id = msg_id
             self._total_messages += 1
+
+        if messages:
+            self._save_cursor()
 
         return events
 

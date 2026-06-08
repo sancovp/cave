@@ -3,14 +3,15 @@
 Pydantic configuration model for CAVEAgent runtime.
 Persists to /tmp/heaven_data/cave_agent_config.json
 """
+# CONNECTS_TO: /tmp/heaven_data/cave_agent_config.json (read/write) — CAVE runtime config
 import json
 from pathlib import Path
 import os
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
-from .models import MainAgentConfig
+from .models import MainAgentConfig, CaveAgentEntry
 
 CAVE_AGENT_CONFIG_PATH = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "cave_agent_config.json"
 CAVE_CONFIG_ARCHIVES_DIR = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "cave_config_archives"
@@ -33,8 +34,13 @@ class CAVEConfig(BaseModel):
     system_prompt_target_path: Optional[Path] = None  # Where to write rendered prompt
     template_vars: Dict[str, str] = Field(default_factory=dict)  # {{VAR}} substitutions
 
-    # === Main Agent ===
+    # === Main Agent (legacy — kept for backwards compat) ===
     main_agent_config: MainAgentConfig = Field(default_factory=MainAgentConfig)
+
+    # === Agent Registry (Stage 5) ===
+    # N agents, typed. CAVEAgent.__init__ creates the right type for each.
+    # If empty, falls back to main_agent_config (legacy single-agent mode).
+    agents: List[CaveAgentEntry] = Field(default_factory=list)
 
     # === Features ===
     enable_sse: bool = True
@@ -48,6 +54,7 @@ class CAVEConfig(BaseModel):
     # === PAIA Hierarchy ===
     # If parent_url is set, this CAVEAgent is a PAIA that reports to a parent
     # If None, this is the root CAVEAgent (the real one)
+    # TRIGGERS: parent CAVE at :8421 via HTTP heartbeat
     parent_url: Optional[str] = None  # e.g., "http://localhost:8421"
     paia_id: Optional[str] = None  # Identity when reporting to parent
     heartbeat_interval: float = 5.0  # Seconds between heartbeats to parent

@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+# CONNECTS_TO: /tmp/self_command_config.json (read/write) — self-command configuration
 COMMAND_CONFIG = Path("/tmp/self_command_config.json")
 
 

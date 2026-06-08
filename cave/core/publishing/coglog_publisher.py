@@ -77,6 +77,7 @@ def query_all_coglogs():
         logger.error("neo4j driver not installed: pip install neo4j")
         return []
 
+    # TRIGGERS: Neo4j:7687 via bolt connection for coglog queries
     uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
     user = os.environ.get("NEO4J_USER", "neo4j")
     password = os.environ.get("NEO4J_PASSWORD", "password")

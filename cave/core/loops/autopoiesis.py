@@ -26,6 +26,8 @@ def _exit_condition(state: Dict[str, Any]) -> bool:
     """Exit when promise file no longer exists (work complete)."""
     from pathlib import Path
     # Matches autopoiesis_mcp pattern: file exists = working, file gone = done
+    # CONNECTS_TO: /tmp/active_promise.md (read) — also accessed by Autopoiesis MCP
+    # TRIGGERS: Autopoiesis L1 exit when file is deleted
     return not Path("/tmp/active_promise.md").exists()
 
 

@@ -10,13 +10,60 @@ Event source types:
   - External: Discord DMs, webhooks, incoming API calls
   - Agent: other agents messaging in (already handled by route_message)
 """
+import json
 import logging
+import os
 import random
 import time
 from dataclasses import dataclass, field
+from datetime import datetime as _datetime
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
+
+HEAVEN_DATA = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data"))
+
+
+class Clock:
+    """Timezone-aware clock for the World.
+
+    Single source of time truth. Reads timezone from journal_config.json.
+    All sanctum/ritual code should use this instead of datetime.now().
+    """
+
+    def __init__(self, timezone: str = "UTC"):
+        self.tz = ZoneInfo(timezone)
+
+    def now(self) -> _datetime:
+        """Current datetime in configured timezone."""
+        return _datetime.now(self.tz)
+
+    def today(self) -> str:
+        """Today's date string (YYYY-MM-DD) in configured timezone."""
+        return self.now().strftime("%Y-%m-%d")
+
+    def time_str(self) -> str:
+        """Current time as HH:MM in configured timezone."""
+        return self.now().strftime("%H:%M")
+
+    def day_of_week(self) -> str:
+        """Current day name lowercase (e.g., 'monday')."""
+        return self.now().strftime("%A").lower()
+
+    @classmethod
+    def from_config(cls) -> "Clock":
+        """Create Clock from journal_config.json timezone field."""
+        config_path = HEAVEN_DATA / "sanctuary" / "journal_config.json"
+        tz = "UTC"
+        if config_path.exists():
+            try:
+                data = json.loads(config_path.read_text())
+                tz = data.get("timezone", "UTC")
+            except (json.JSONDecodeError, OSError):
+                pass
+        return cls(timezone=tz)
 
 
 @dataclass
@@ -125,6 +172,7 @@ class World:
         self._tick_count: int = 0
         self._last_tick: float = 0.0
         self._total_events: int = 0
+        self.clock: Clock = Clock.from_config()
 
     def add_source(self, source: EventSource) -> None:
         """Register an event source."""

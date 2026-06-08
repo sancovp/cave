@@ -146,6 +146,7 @@ class InTerminalPanel:
     For always-visible HUDs, logs, status displays.
     """
     name: str
+    # CONNECTS_TO: /tmp/hud.txt (read) — HUD display panel watches this file
     command: str  # Command to run in the panel (e.g., "watch -n1 cat /tmp/hud.txt")
     width: int = 30  # Columns
     position: str = "right"  # left or right

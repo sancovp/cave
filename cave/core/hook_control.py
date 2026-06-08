@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Literal
 
+# CONNECTS_TO: /tmp/hook_control.json (read/write) — hooks check this before executing
 HOOK_CONTROL_CONFIG = Path("/tmp/hook_control.json")
 
 HookType = Literal[

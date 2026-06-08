@@ -2,6 +2,39 @@
 CAVE HTTP Server - Entry point for CAVE daemon.
 
 Run: python -m cave.server.http_server [--port 8080]
+
+# =============================================================================
+# CAVE_REFACTOR: HTTP SERVER CHANGES (Stage 6)
+# =============================================================================
+#
+# CURRENT: Global `cave: CAVEAgent = None` created at startup with inverted
+#          ownership. Routes contain business logic. This is the CAVE library
+#          version (512 lines). The actual running server is sanctuary-revolution's
+#          http_server.py (2521 lines of monolith).
+#
+# TARGET: CAVEHTTPServer class. FACADE pattern.
+#
+#   class CAVEHTTPServer:
+#       \"\"\"Takes port + CAVEAgent impl. That's it.\"\"\"
+#       def __init__(self, port: int, cave: CAVEAgent):
+#           self.cave = cave
+#           self.app = FastAPI()
+#           self._register_routes()  # all routes delegate to self.cave
+#
+#   Every route = ONE method call on self.cave. No logic in routes.
+#   No global cave variable. Agent passed IN, not created here.
+#
+#   WebhookAutomation route registration built in (/webhook/{name}).
+#
+#   start_sancrev.py becomes:
+#       wd = WakingDreamer()
+#       cave = CAVEHTTPServer(8080, wd)
+#       uvicorn.run(cave.app)
+#
+#   The sanctuary-revolution 2521-line monolith gets replaced by this
+#   facade + WakingDreamer(CAVEAgent) impl providing all the methods.
+#
+# =============================================================================
 """
 import argparse
 import threading
@@ -31,7 +64,12 @@ _organ_thread: threading.Thread = None
 @app.on_event("startup")
 async def startup():
     global cave, _organ_thread
-    cave = CAVEAgent(CAVEConfig.load())
+    try:
+        from sanctuary_revolution.harness.server.waking_dreamer import WakingDreamer
+        WakingDreamer.reset()
+        cave = WakingDreamer()
+    except ImportError:
+        cave = CAVEAgent(CAVEConfig.load())
     _organ_thread = threading.Thread(target=run_organ_daemon, daemon=True, name="organ_daemon")
     _organ_thread.start()
 
@@ -39,6 +77,39 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     pass
+
+
+# === Self Inject (tmux prompt injection) ===
+@app.post("/self/inject")
+async def self_inject(data: Dict[str, Any]):
+    """Inject prompt into main agent's tmux session.
+
+    Sends text to tmux, then Enter to put it in the chat window,
+    then sleeps, then Enter again to submit it in Claude Code.
+    """
+    import time
+
+    message = data.get("message", "")
+    press_enter = data.get("press_enter", True)
+
+    if cave is None or cave.main_agent is None:
+        return {"error": "Main agent not attached"}
+
+    # Send the text into tmux
+    cave.main_agent.send_keys(message)
+
+    if press_enter:
+        # First Enter: puts text into Claude Code chat input
+        time.sleep(0.5)
+        cave.main_agent.send_keys("Enter")
+        # Second Enter: submits the chat input
+        time.sleep(0.5)
+        cave.main_agent.send_keys("Enter")
+
+    return {
+        "status": "delivered",
+        "session": cave.config.main_agent_config.tmux_session,
+    }
 
 
 # === Main Agent Config Archives ===

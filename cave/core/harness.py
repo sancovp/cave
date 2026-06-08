@@ -289,6 +289,7 @@ class PAIAHarness:
             return
 
         # Write to injection file (hooks pick it up)
+        # CONNECTS_TO: /tmp/paia_injection.txt (write) — paia hooks pick this up
         injection_file = Path("/tmp/paia_injection.txt")
         injection_file.write_text("\n".join(messages))
 

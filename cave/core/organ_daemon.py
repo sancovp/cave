@@ -25,8 +25,9 @@ import httpx
 
 from .world import World, WorldEvent, RNGEventSource
 from .discord_source import DiscordChannelSource
-from .sanctum_source import SanctumRitualSource
+
 from .channel import UserDiscordChannel
+from .discord_config import load_discord_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -36,8 +37,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 INBOX_DIR = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "inboxes" / "main"
+# CONNECTS_TO: /tmp/paia_hooks/pending_injection.json (write) — paia hooks read this
+INJECTION_FILE = Path("/tmp/paia_hooks/pending_injection.json")
 PID_FILE = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "organ_daemon.pid"
 TICK_INTERVAL = 30.0
+# TRIGGERS: CAVE/sancrev:8080 via HTTP POST for organ ticks and ritual dispatches
 CAVE_BASE_URL = os.environ.get("CAVE_URL", "http://localhost:8080")
 
 
@@ -130,6 +134,59 @@ def _handle_command(command: str, argument: str, source: str = "discord") -> Non
             logger.error("Command 'done %s' failed: %s", argument, e, exc_info=True)
 
 
+_sent_discord_ids: set = set()
+
+
+def send_to_conductor(event: WorldEvent) -> str:
+    """Send a WorldEvent to Conductor via /messages/send (llegos inbox). Returns message_id."""
+    # Deduplicate by discord_message_id to prevent double-delivery across tick cycles
+    discord_mid = event.metadata.get("discord_message_id")
+    if discord_mid and discord_mid in _sent_discord_ids:
+        logger.debug("Skipping duplicate discord_message_id %s", discord_mid)
+        return "duplicate"
+    if discord_mid:
+        _sent_discord_ids.add(discord_mid)
+        # Keep set bounded
+        if len(_sent_discord_ids) > 500:
+            _sent_discord_ids.clear()
+    try:
+        resp = httpx.post(
+            f"{CAVE_BASE_URL}/messages/send",
+            json={
+                "from_agent": f"world:{event.source}",
+                "to_agent": "conductor",
+                "content": event.content,
+                "ingress": "discord",
+                "priority": event.priority,
+                "metadata": event.metadata,
+            },
+            timeout=5.0,
+        )
+        data = resp.json()
+        return data.get("message_id", "unknown")
+    except Exception as e:
+        logger.error("Failed to send to Conductor via /messages/send: %s", e)
+        return "error"
+
+
+def write_to_injection(event: WorldEvent) -> None:
+    """Write a WorldEvent directly to pending_injection.json for immediate context injection."""
+    INJECTION_FILE.parent.mkdir(parents=True, exist_ok=True)
+    pending = []
+    if INJECTION_FILE.exists():
+        try:
+            pending = json.loads(INJECTION_FILE.read_text())
+        except (json.JSONDecodeError, IOError):
+            pending = []
+    pending.append({
+        "source": "world",
+        "event": event.metadata.get("rng_event", event.source),
+        "message": event.content,
+        "priority": event.priority,
+    })
+    INJECTION_FILE.write_text(json.dumps(pending, indent=2))
+
+
 def write_to_inbox(event: WorldEvent) -> str:
     """Write a WorldEvent to file inbox. Returns message_id."""
     INBOX_DIR.mkdir(parents=True, exist_ok=True)
@@ -184,14 +241,21 @@ def stop_daemon():
 
 
 def run():
-    """Main daemon loop."""
-    # Build World
-    world = World()
-    world.add_source(RNGEventSource.default_world_events())
-    world.add_source(DiscordChannelSource.from_config())
-    world.add_source(SanctumRitualSource.from_config())
+    """Organ daemon — DEPRECATED as standalone World poller.
 
-    # PID management
+    ARCHITECTURE RULE (Isaac, Mar 01 2026):
+    CaveAgent is the ONLY thing that ever runs. ALL World polling and Discord
+    routing happens inside CaveAgent's Ears (perceive_world / _route_discord_event).
+    organ_daemon must NEVER create its own World or DiscordChannelSource.
+
+    This daemon now only manages PID lifecycle. All event routing has been moved
+    to cave.core.mixins.anatomy.Ears.perceive_world().
+
+    Previously this created its own World() with DiscordChannelSource, causing
+    double-message delivery (two processes polling same Discord channel with
+    same cursor file). See: Bug_Organ_Daemon_Rogue_World_Mar01 in CartON.
+    """
+    # PID management — kept so health checks can verify daemon is "alive"
     _write_pid()
     running = True
 
@@ -200,55 +264,18 @@ def run():
         logger.info("Received signal %s, shutting down...", signum)
         running = False
 
-    signal.signal(signal.SIGTERM, _shutdown)
-    signal.signal(signal.SIGINT, _shutdown)
+    import threading as _threading
+    if _threading.current_thread() is _threading.main_thread():
+        signal.signal(signal.SIGTERM, _shutdown)
+        signal.signal(signal.SIGINT, _shutdown)
 
-    # Discord channel for outbound pings
-    discord_out = UserDiscordChannel()
-    discord_ok = bool(discord_out.token and discord_out.channel_id)
-    if not discord_ok:
-        logger.warning("UserDiscordChannel not configured — no Discord pings for rituals")
-
-    # Sources that should also ping Isaac in Discord
-    DISCORD_PING_SOURCES = {"sanctum"}
-
-    logger.info("Organ daemon started (pid %d, tick every %.0fs)", os.getpid(), TICK_INTERVAL)
-    logger.info("Inbox: %s", INBOX_DIR)
-    logger.info("Discord pings: %s", "enabled" if discord_ok else "disabled")
-    logger.info("Sources: %s", ", ".join(
-        f"{name}({'on' if s.enabled else 'off'})"
-        for name, s in world._sources.items()
-    ))
+    logger.info("Organ daemon started (pid %d) — PASSIVE MODE (no World, no polling)", os.getpid())
+    logger.info("All event routing moved to CaveAgent.ears.perceive_world()")
 
     try:
         while running:
-            events = world.tick()
-            for event in events:
-                # Check for commands in Discord messages
-                is_command = False
-                if event.source == "discord":
-                    cmd = _detect_command(event.content)
-                    if cmd:
-                        command, argument = cmd
-                        logger.info("Command detected: %s %s", command, argument)
-                        _handle_command(command, argument, source="discord")
-                        is_command = True
-                        # Still write to inbox for audit, but mark as command
-                        event.metadata["command"] = True
-                        event.metadata["command_type"] = command
-                        event.metadata["command_arg"] = argument
-
-                mid = write_to_inbox(event)
-                logger.info("Inbox <- %s: %s (%s)%s", event.source, event.content[:80], mid,
-                            " [CMD]" if is_command else "")
-
-                # Ping Isaac in Discord for configured sources (skip commands — they get their own confirmation)
-                if discord_ok and event.source in DISCORD_PING_SOURCES and not is_command:
-                    try:
-                        discord_out.deliver({"message": event.content})
-                        logger.info("Discord ping <- %s: %s", event.source, event.content[:60])
-                    except Exception as e:
-                        logger.error("Discord ping failed: %s", e)
+            # No World.tick() — CaveAgent owns the World.
+            # This loop only keeps the PID file alive for health checks.
             time.sleep(TICK_INTERVAL)
     finally:
         _remove_pid()
