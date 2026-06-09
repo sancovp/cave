@@ -2,11 +2,9 @@
 
 <!-- SCALABLE-PUBLISHING:AUTOGEN START (managed block — do not edit between these markers) -->
 
-![License](https://img.shields.io/badge/license-Other-blue.svg) ![Stars](https://img.shields.io/github/stars/sancovp/cave.svg?style=social) ![Updated](https://img.shields.io/badge/updated-2026_02_24-lightgrey.svg)
+![License](https://img.shields.io/badge/license-Other-blue.svg) ![Stars](https://img.shields.io/github/stars/sancovp/cave.svg?style=social) ![Updated](https://img.shields.io/badge/updated-2026_06_08-lightgrey.svg)
 
-⭐ 0 stars • 🕑 Updated 2026-02-24
-
-[Marketplace](https://github.com/sancovp/sancrev-marketplace) • [Docs](https://sancovp.github.io/aisaac/)
+⭐ 0 stars • 🕑 Updated 2026-06-08
 
 📦 Auto-published from the monorepo • [CHANGELOG](./CHANGELOG.md) • [sancovp/cave](https://github.com/sancovp/cave)
 
