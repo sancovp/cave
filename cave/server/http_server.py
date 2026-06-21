@@ -340,6 +340,23 @@ def gate_aios_candidate(data: Dict[str, Any] | None = None):
     )
 
 
+@app.post("/aios/skilltree/project")
+def run_aios_skilltree_project(data: Dict[str, Any] | None = None):
+    """Run project-local skilltree catalog, doctor, or map behavior."""
+    data = data or {}
+    return cave.aios_skilltree_project(
+        command=data.get("command", "doctor"),
+        write_map=bool(data.get("write_map", False)),
+    )
+
+
+@app.post("/aios/skilltree/lab")
+def run_aios_skilltree_lab(data: Dict[str, Any] | None = None):
+    """Run the AIOS runtime skilltree lab."""
+    data = data or {}
+    return cave.aios_skilltree_lab(command=data.get("command", "run"))
+
+
 # === DNA (Auto Mode) Endpoints ===
 @app.get("/dna/status")
 def get_dna_status():

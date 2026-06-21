@@ -51,3 +51,9 @@ class AIOSMixin:
 
     def aios_gate(self, candidate_id: Optional[str] = None, *, limit: int = 8) -> Dict[str, Any]:
         return self._get_aios_bridge().gate(candidate_id=candidate_id, limit=limit)
+
+    def aios_skilltree_project(self, *, command: str = "doctor", write_map: bool = False) -> Dict[str, Any]:
+        return self._get_aios_bridge().skilltree_project(command=command, write_map=write_map)
+
+    def aios_skilltree_lab(self, *, command: str = "run") -> Dict[str, Any]:
+        return self._get_aios_bridge().skilltree_lab(command=command)

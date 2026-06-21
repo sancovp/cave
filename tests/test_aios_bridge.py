@@ -23,6 +23,7 @@ def make_aios_root(tmp_path):
         "silas_aios/registries/surface_registry.md",
         "silas_aios/search/skilltree.md",
         "silas_aios/skilltree/project_skilltree.md",
+        "silas_aios/skilltree/test_lab.md",
         "silas_aios/adapters/codex_skilltree_adapter.md",
         "silas_aios/selector/policy.md",
         "silas_aios/selector/boundary_gate.md",
@@ -38,11 +39,13 @@ def make_aios_root(tmp_path):
         "silas_aios/runtime/next_action.md",
         "silas_aios/runtime/selector_decision.json",
         "silas_aios/runtime/skilltree_project_map.md",
+        "silas_aios/runtime/skilltree_lab/report.md",
         ".codex/skills/sic-silas-aios/SKILL.md",
         ".codex/skills/sic-silas-aios/references/boot-protocol.md",
         ".codex/skills/sic-silas-aios/scripts/aios_status.py",
         ".codex/skills/sic-silas-aios/scripts/aios_search.py",
         ".codex/skills/sic-silas-aios/scripts/aios_skilltree_project.py",
+        ".codex/skills/sic-silas-aios/scripts/aios_skilltree_lab.py",
         ".codex/skills/sic-silas-aios/scripts/aios_select.py",
         ".codex/skills/sic-silas-aios/scripts/aios_skilltree_adapter.py",
         ".codex/skills/sic-silas-aios/scripts/aios_gate.py",
@@ -214,6 +217,14 @@ def test_http_aios_routes_delegate_to_cave(monkeypatch):
             calls.append(("gate", data))
             return {"decision": "checkpoint"}
 
+        def aios_skilltree_project(self, **data):
+            calls.append(("skilltree_project", data))
+            return {"status": "ok", "command": data.get("command")}
+
+        def aios_skilltree_lab(self, **data):
+            calls.append(("skilltree_lab", data))
+            return {"status": "ok", "command": data.get("command")}
+
     monkeypatch.setattr(http_server, "cave", HttpFakeCave())
 
     assert http_server.get_aios_status() == {"status": "ok"}
@@ -221,10 +232,14 @@ def test_http_aios_routes_delegate_to_cave(monkeypatch):
     assert http_server.search_aios({"query": "AIOS", "domain": "skills", "limit": 3}) == {"results": []}
     assert http_server.select_aios_next({"limit": 2}) == {"selected": {"id": "candidate"}}
     assert http_server.gate_aios_candidate({"candidate_id": "live_cave_mcp_wiring", "limit": 4}) == {"decision": "checkpoint"}
+    assert http_server.run_aios_skilltree_project({"command": "doctor"}) == {"status": "ok", "command": "doctor"}
+    assert http_server.run_aios_skilltree_lab({"command": "run"}) == {"status": "ok", "command": "run"}
     assert calls == [
         ("status", None),
         ("next", None),
         ("search", {"query": "AIOS", "domain": "skills", "limit": 3}),
         ("select", {"limit": 2}),
         ("gate", {"candidate_id": "live_cave_mcp_wiring", "limit": 4}),
+        ("skilltree_project", {"command": "doctor", "write_map": False}),
+        ("skilltree_lab", {"command": "run"}),
     ]

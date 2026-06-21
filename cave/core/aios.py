@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -16,6 +18,7 @@ DEFAULT_REQUIRED_PATHS = [
     "silas_aios/registries/surface_registry.md",
     "silas_aios/search/skilltree.md",
     "silas_aios/skilltree/project_skilltree.md",
+    "silas_aios/skilltree/test_lab.md",
     "silas_aios/adapters/codex_skilltree_adapter.md",
     "silas_aios/selector/policy.md",
     "silas_aios/selector/boundary_gate.md",
@@ -31,11 +34,13 @@ DEFAULT_REQUIRED_PATHS = [
     "silas_aios/runtime/next_action.md",
     "silas_aios/runtime/selector_decision.json",
     "silas_aios/runtime/skilltree_project_map.md",
+    "silas_aios/runtime/skilltree_lab/report.md",
     ".codex/skills/sic-silas-aios/SKILL.md",
     ".codex/skills/sic-silas-aios/references/boot-protocol.md",
     ".codex/skills/sic-silas-aios/scripts/aios_status.py",
     ".codex/skills/sic-silas-aios/scripts/aios_search.py",
     ".codex/skills/sic-silas-aios/scripts/aios_skilltree_project.py",
+    ".codex/skills/sic-silas-aios/scripts/aios_skilltree_lab.py",
     ".codex/skills/sic-silas-aios/scripts/aios_select.py",
     ".codex/skills/sic-silas-aios/scripts/aios_skilltree_adapter.py",
     ".codex/skills/sic-silas-aios/scripts/aios_gate.py",
@@ -308,6 +313,21 @@ class AIOSBridge:
             return "not_selected", False, "Candidate is not the current selected AIOS move."
         return "allowed", True, "Candidate is the selected non-approval move."
 
+    def skilltree_project(self, *, command: str = "doctor", write_map: bool = False) -> Dict[str, Any]:
+        """Run the project-local skilltree catalog, doctor, or map behavior."""
+        if command not in {"catalog", "doctor", "map"}:
+            return {"status": "error", "error": f"unknown project skilltree command: {command}"}
+        args = [command]
+        if command == "map" and write_map:
+            args.append("--write")
+        return self._run_aios_script("aios_skilltree_project.py", args)
+
+    def skilltree_lab(self, *, command: str = "run") -> Dict[str, Any]:
+        """Run a mutating skilltree lab constrained to AIOS runtime test dirs."""
+        if command != "run":
+            return {"status": "error", "error": f"unknown skilltree lab command: {command}"}
+        return self._run_aios_script("aios_skilltree_lab.py", [command], timeout=60)
+
     def _build_candidates(self, root: Path, status: Dict[str, Any]) -> List[Dict[str, Any]]:
         missing = status.get("missing", [])
         if missing:
@@ -526,6 +546,39 @@ class AIOSBridge:
         if not path.is_file():
             return ""
         return path.read_text(encoding="utf-8", errors="replace")
+
+    def _run_aios_script(self, script_name: str, args: List[str], *, timeout: int = 30) -> Dict[str, Any]:
+        root = self.resolved_root
+        if root is None:
+            return {"status": "missing", "root": None, "error": "AIOS root could not be discovered."}
+        script = root / ".codex" / "skills" / "sic-silas-aios" / "scripts" / script_name
+        if not script.is_file():
+            return {"status": "missing", "root": str(root), "script": str(script), "error": "AIOS script missing."}
+        proc = subprocess.run(
+            [sys.executable, str(script), "--root", str(root), *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        try:
+            payload = json.loads(proc.stdout)
+        except json.JSONDecodeError:
+            return {
+                "status": "error",
+                "root": str(root),
+                "script": str(script),
+                "returncode": proc.returncode,
+                "stdout": proc.stdout,
+                "stderr": proc.stderr,
+                "error": "AIOS script did not emit JSON on stdout.",
+            }
+        payload.setdefault("status", "ok" if proc.returncode == 0 else "error")
+        payload["returncode"] = proc.returncode
+        if proc.stderr:
+            payload["stderr"] = proc.stderr
+        if proc.returncode != 0 and payload.get("status") == "ok":
+            payload["status"] = "error"
+        return payload
 
     def _codex_skilltree_adapter_complete(self, root: Path) -> bool:
         required = [

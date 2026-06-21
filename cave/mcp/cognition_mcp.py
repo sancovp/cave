@@ -177,6 +177,18 @@ def aios_gate(candidate_id: Optional[str] = None, limit: int = 8) -> dict:
 
 
 @mcp.tool()
+def aios_skilltree_project(command: str = "doctor", write_map: bool = False) -> dict:
+    """Run project-local skilltree catalog, doctor, or map behavior."""
+    return _post("/aios/skilltree/project", {"command": command, "write_map": write_map})
+
+
+@mcp.tool()
+def aios_skilltree_lab(command: str = "run") -> dict:
+    """Run the AIOS runtime skilltree lab."""
+    return _post("/aios/skilltree/lab", {"command": command})
+
+
+@mcp.tool()
 def dna_create_config(
     name: str,
     loop_names: list[str],
