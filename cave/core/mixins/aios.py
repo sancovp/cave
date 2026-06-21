@@ -45,3 +45,6 @@ class AIOSMixin:
         limit: int = 8,
     ) -> Dict[str, Any]:
         return self._get_aios_bridge().search(query=query, domain=domain, limit=limit)
+
+    def aios_select_next(self, *, limit: int = 8) -> Dict[str, Any]:
+        return self._get_aios_bridge().select_next(limit=limit)

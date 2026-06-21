@@ -323,6 +323,13 @@ def search_aios(data: Dict[str, Any]):
     )
 
 
+@app.post("/aios/select")
+def select_aios_next(data: Dict[str, Any] | None = None):
+    """Select the next lawful AIOS move without executing it."""
+    data = data or {}
+    return cave.aios_select_next(limit=int(data.get("limit", 8)))
+
+
 # === DNA (Auto Mode) Endpoints ===
 @app.get("/dna/status")
 def get_dna_status():

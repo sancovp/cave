@@ -22,6 +22,7 @@ def make_aios_root(tmp_path):
         "silas_aios/registries/term_nucleus.md",
         "silas_aios/registries/surface_registry.md",
         "silas_aios/search/skilltree.md",
+        "silas_aios/selector/policy.md",
         "silas_aios/ledgers/context_ledger.md",
         "silas_aios/ledgers/budget_ledger.md",
         "silas_aios/maps/architecture_map.md",
@@ -32,14 +33,21 @@ def make_aios_root(tmp_path):
         "silas_aios/queues/promotion_queue.md",
         "silas_aios/runtime/current_mode.md",
         "silas_aios/runtime/next_action.md",
+        "silas_aios/runtime/selector_decision.json",
         ".codex/skills/sic-silas-aios/SKILL.md",
         ".codex/skills/sic-silas-aios/references/boot-protocol.md",
         ".codex/skills/sic-silas-aios/scripts/aios_status.py",
         ".codex/skills/sic-silas-aios/scripts/aios_search.py",
+        ".codex/skills/sic-silas-aios/scripts/aios_select.py",
     ]
     for rel in required:
         _write(root / rel, f"# {rel}\nAIOS searchable content\n")
     _write(root / "silas_aios/runtime/next_action.md", "# Next Action\nRun AIOS bridge assay\n")
+    _write(root / "silas_aios/runtime/selector_decision.json", "{}\n")
+    _write(
+        root / "silas_aios/queues/mutation_queue.md",
+        "Candidate future mutations:\n- Build a Codex adapter for skilltree.\n",
+    )
     _write(
         root / ".codex/skills/sic-silas-aios/SKILL.md",
         "---\nname: sic-silas-aios\ndescription: AIOS boot bridge\n---\n\nSearch AIOS status.\n",
@@ -82,6 +90,25 @@ def test_aios_bridge_status_next_action_and_fallback_search(tmp_path):
     assert prompt_hits["results"][0]["path"].endswith("aios_prompt.md")
 
 
+def test_aios_bridge_selects_advisory_dna_sequence(tmp_path):
+    root = make_aios_root(tmp_path)
+    bridge = AIOSBridge(root=root, use_installed_skilltree=False)
+
+    selection = bridge.select_next()
+
+    assert selection["status"] == "ok"
+    assert selection["selected"]["id"] == "codex_skilltree_adapter"
+    assert selection["selected"]["requires_approval"] is False
+    assert selection["dna_sequence"]["mode"] == "advisory"
+    assert selection["dna_sequence"]["metadata"]["selected_candidate"] == "codex_skilltree_adapter"
+    assert [step["id"] for step in selection["dna_sequence"]["steps"]] == [
+        "observe",
+        "act",
+        "assay",
+        "checkpoint",
+    ]
+
+
 def test_aios_bridge_reports_missing_root(tmp_path):
     bridge = AIOSBridge(root=tmp_path / "absent", use_installed_skilltree=False)
 
@@ -103,6 +130,7 @@ def test_aios_mixin_delegates_to_bridge(tmp_path):
     assert cave.aios_status()["status"] == "ok"
     assert "Run AIOS bridge assay" in cave.aios_next_action()["next_action"]
     assert cave.aios_search("AIOS", domain="skills")["results"]
+    assert cave.aios_select_next()["selected"]["id"] == "codex_skilltree_adapter"
 
 
 def test_http_aios_routes_delegate_to_cave(monkeypatch):
@@ -121,13 +149,19 @@ def test_http_aios_routes_delegate_to_cave(monkeypatch):
             calls.append(("search", data))
             return {"results": []}
 
+        def aios_select_next(self, **data):
+            calls.append(("select", data))
+            return {"selected": {"id": "candidate"}}
+
     monkeypatch.setattr(http_server, "cave", HttpFakeCave())
 
     assert http_server.get_aios_status() == {"status": "ok"}
     assert http_server.get_aios_next_action() == {"next_action": "act"}
     assert http_server.search_aios({"query": "AIOS", "domain": "skills", "limit": 3}) == {"results": []}
+    assert http_server.select_aios_next({"limit": 2}) == {"selected": {"id": "candidate"}}
     assert calls == [
         ("status", None),
         ("next", None),
         ("search", {"query": "AIOS", "domain": "skills", "limit": 3}),
+        ("select", {"limit": 2}),
     ]

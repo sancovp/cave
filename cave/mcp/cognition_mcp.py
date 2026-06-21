@@ -165,6 +165,12 @@ def aios_search(query: str, domain: str = "all", limit: int = 8) -> dict:
 
 
 @mcp.tool()
+def aios_select_next(limit: int = 8) -> dict:
+    """Select the next lawful AIOS move and advisory DNASequence."""
+    return _post("/aios/select", {"limit": limit})
+
+
+@mcp.tool()
 def dna_create_config(
     name: str,
     loop_names: list[str],

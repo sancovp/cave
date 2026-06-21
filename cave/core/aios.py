@@ -6,7 +6,7 @@ import hashlib
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
 
 DEFAULT_REQUIRED_PATHS = [
@@ -15,6 +15,7 @@ DEFAULT_REQUIRED_PATHS = [
     "silas_aios/registries/term_nucleus.md",
     "silas_aios/registries/surface_registry.md",
     "silas_aios/search/skilltree.md",
+    "silas_aios/selector/policy.md",
     "silas_aios/ledgers/context_ledger.md",
     "silas_aios/ledgers/budget_ledger.md",
     "silas_aios/maps/architecture_map.md",
@@ -25,10 +26,12 @@ DEFAULT_REQUIRED_PATHS = [
     "silas_aios/queues/promotion_queue.md",
     "silas_aios/runtime/current_mode.md",
     "silas_aios/runtime/next_action.md",
+    "silas_aios/runtime/selector_decision.json",
     ".codex/skills/sic-silas-aios/SKILL.md",
     ".codex/skills/sic-silas-aios/references/boot-protocol.md",
     ".codex/skills/sic-silas-aios/scripts/aios_status.py",
     ".codex/skills/sic-silas-aios/scripts/aios_search.py",
+    ".codex/skills/sic-silas-aios/scripts/aios_select.py",
 ]
 
 DEFAULT_EXTS = (".md", ".txt", ".mdx", ".rst")
@@ -202,6 +205,250 @@ class AIOSBridge:
             "engine": engine,
             "results": results,
         }
+
+    def select_next(self, *, limit: int = 8) -> Dict[str, Any]:
+        """Select the next lawful AIOS move and emit an advisory DNASequence candidate."""
+        root = self.resolved_root
+        status = self.status()
+        if root is None:
+            selected = self._candidate(
+                "repair_aios_root",
+                "Repair missing AIOS root",
+                "Create or point CAVE at a project root containing silas_aios/AGENTS.md.",
+                100,
+                category="repair",
+                required=True,
+                evidence_files=[],
+                reason="AIOS root could not be discovered.",
+            )
+            return self._selection_payload(None, status, selected, [selected], limit=limit)
+
+        candidates = self._build_candidates(root, status)
+        candidates.sort(key=lambda item: (-item["score"], item["id"]))
+        selected = next(
+            (item for item in candidates if not item.get("requires_approval") and item.get("status") != "completed"),
+            candidates[0] if candidates else self._candidate(
+                "stop_complete",
+                "Stop at checkpoint",
+                "No lawful next candidate was found; remain at human checkpoint.",
+                0,
+                category="checkpoint",
+                reason="No candidates available.",
+            ),
+        )
+        return self._selection_payload(root, status, selected, candidates, limit=limit)
+
+    def _build_candidates(self, root: Path, status: Dict[str, Any]) -> List[Dict[str, Any]]:
+        missing = status.get("missing", [])
+        if missing:
+            return [
+                self._candidate(
+                    "repair_aios_drift",
+                    "Repair AIOS required-surface drift",
+                    "Restore missing AIOS files before adding new organs.",
+                    100,
+                    category="repair",
+                    evidence_files=["silas_aios/maps/drift_map.md"],
+                    reason=f"AIOS status reports {len(missing)} missing required surface(s).",
+                    metadata={"missing": missing},
+                )
+            ]
+
+        next_text = self._read(root, "silas_aios/runtime/next_action.md")
+        mutation_text = self._read(root, "silas_aios/queues/mutation_queue.md")
+        promotion_text = self._read(root, "silas_aios/queues/promotion_queue.md")
+        selector_exists = (root / "silas_aios" / "runtime" / "selector_decision.json").is_file()
+
+        candidates = [
+            self._candidate(
+                "codex_skilltree_adapter",
+                "Design Codex adapter for skilltree tree/coherence operations",
+                "Design and assay a Codex-safe adapter for skilltree tree/coherence operations without mutating .codex/skills yet.",
+                86,
+                category="adapter",
+                evidence_files=[
+                    "silas_aios/search/skilltree.md",
+                    "silas_aios/maps/drift_map.md",
+                    "silas_aios/queues/mutation_queue.md",
+                ],
+                reason="This is inside the AIOS/CAVE boundary and advances skilltree integration without live mutation.",
+                metadata={"boundary": "no mutating skilltree commands without approval"},
+            ),
+            self._candidate(
+                "live_cave_mcp_wiring",
+                "Wire AIOS bridge into live CAVE/MCP runtime",
+                "Start or configure live daemon/MCP access to the AIOS bridge after approval.",
+                70,
+                category="wiring",
+                requires_approval=True,
+                evidence_files=["cave/cave/mcp/cognition_mcp.py", "cave/cave/server/http_server.py"],
+                reason="Live daemon or hook wiring is outside the current no-surprises boundary.",
+            ),
+            self._candidate(
+                "global_aios_promotion",
+                "Promote tiny AIOS definition into global SILAS rules",
+                "Patch global SILAS rules with the minimal AIOS definition after approval.",
+                30,
+                category="promotion",
+                requires_approval=True,
+                evidence_files=["silas_aios/queues/promotion_queue.md"],
+                reason="Global rules are outside the AIOS/CAVE write boundary.",
+            ),
+            self._candidate(
+                "state_store_migration",
+                "Evaluate authoritative AIOS state-store migration",
+                "Decide whether Markdown remains source of truth or SQLite becomes canonical after more retrieval evidence.",
+                40,
+                category="store",
+                requires_approval=True,
+                evidence_files=["silas_aios/ledgers/context_ledger.md"],
+                reason="Making a store authoritative is an architectural boundary decision.",
+            ),
+        ]
+
+        if selector_exists:
+            candidates.append(
+                self._candidate(
+                    "selector_policy",
+                    "Selector policy is installed",
+                    "Maintain selector policy and use it to choose the next bounded organ.",
+                    10,
+                    category="selector",
+                    status="completed",
+                    evidence_files=["silas_aios/runtime/selector_decision.json"],
+                    reason="Selector output already exists.",
+                )
+            )
+        else:
+            candidates.append(
+                self._candidate(
+                    "selector_policy",
+                    "Install selector policy",
+                    "Create selector policy and persist the first selector decision.",
+                    95,
+                    category="selector",
+                    evidence_files=["silas_aios/selector/policy.md"],
+                    reason="AIOS lacks a persisted selector decision.",
+                )
+            )
+
+        if "Codex adapter" in next_text or "skilltree" in mutation_text:
+            self._boost(candidates, "codex_skilltree_adapter", 8, "runtime/queues name the skilltree Codex adapter as a frontier.")
+        if "global" in promotion_text.lower():
+            self._boost(candidates, "global_aios_promotion", 5, "promotion queue contains global AIOS promotion.")
+        return candidates
+
+    def _selection_payload(
+        self,
+        root: Optional[Path],
+        status: Dict[str, Any],
+        selected: Dict[str, Any],
+        candidates: List[Dict[str, Any]],
+        *,
+        limit: int,
+    ) -> Dict[str, Any]:
+        limited = candidates[:limit]
+        dna_sequence = self._dna_sequence_for(selected)
+        return {
+            "status": "ok" if status.get("status") == "ok" else "drift",
+            "root": str(root) if root else None,
+            "selected": selected,
+            "candidates": limited,
+            "dna_sequence": dna_sequence,
+            "note": "Advisory selection only; no action has been executed.",
+        }
+
+    def _dna_sequence_for(self, candidate: Dict[str, Any]) -> Dict[str, Any]:
+        candidate_id = candidate["id"]
+        return {
+            "name": f"aios_{candidate_id}",
+            "description": f"Advisory DNASequence for {candidate['title']}",
+            "mode": "advisory",
+            "metadata": {
+                "source": "AIOSBridge.select_next",
+                "selected_candidate": candidate_id,
+                "requires_approval": candidate.get("requires_approval", False),
+                "category": candidate.get("category"),
+            },
+            "steps": [
+                {
+                    "id": "observe",
+                    "title": "Observe selected candidate context",
+                    "prompt": f"Inspect the evidence files for `{candidate_id}` and confirm the boundary conditions before editing.",
+                    "required": True,
+                    "evidence_files": candidate.get("evidence_files", []),
+                    "metadata": {"operator": "observe", "candidate": candidate_id},
+                },
+                {
+                    "id": "act",
+                    "title": candidate["title"],
+                    "prompt": candidate["prompt"],
+                    "required": True,
+                    "evidence_files": candidate.get("evidence_files", []),
+                    "metadata": {
+                        "operator": "act",
+                        "candidate": candidate_id,
+                        "requires_approval": candidate.get("requires_approval", False),
+                    },
+                },
+                {
+                    "id": "assay",
+                    "title": "Assay selected move",
+                    "prompt": "Run focused verification and record evidence in AIOS maps/ledgers.",
+                    "required": True,
+                    "metadata": {"operator": "assay", "candidate": candidate_id},
+                },
+                {
+                    "id": "checkpoint",
+                    "title": "Checkpoint with Isaac",
+                    "prompt": "Summarize evidence, update AIOS next action, and stop before crossing any approval boundary.",
+                    "required": True,
+                    "metadata": {"operator": "checkpoint", "candidate": candidate_id},
+                },
+            ],
+        }
+
+    def _candidate(
+        self,
+        candidate_id: str,
+        title: str,
+        prompt: str,
+        score: int,
+        *,
+        category: str,
+        status: str = "candidate",
+        requires_approval: bool = False,
+        required: bool = False,
+        evidence_files: Optional[List[str]] = None,
+        reason: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return {
+            "id": candidate_id,
+            "title": title,
+            "prompt": prompt,
+            "score": score,
+            "category": category,
+            "status": status,
+            "requires_approval": requires_approval,
+            "required": required,
+            "evidence_files": evidence_files or [],
+            "reason": reason,
+            "metadata": metadata or {},
+        }
+
+    def _boost(self, candidates: List[Dict[str, Any]], candidate_id: str, amount: int, reason: str) -> None:
+        for candidate in candidates:
+            if candidate["id"] == candidate_id:
+                candidate["score"] += amount
+                candidate["reason"] = f"{candidate['reason']} {reason}".strip()
+                break
+
+    def _read(self, root: Path, rel: str) -> str:
+        path = root / rel
+        if not path.is_file():
+            return ""
+        return path.read_text(encoding="utf-8", errors="replace")
 
     def _load_skilltree(self) -> Optional[Dict[str, Any]]:
         sources = []
