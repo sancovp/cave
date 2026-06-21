@@ -48,3 +48,6 @@ class AIOSMixin:
 
     def aios_select_next(self, *, limit: int = 8) -> Dict[str, Any]:
         return self._get_aios_bridge().select_next(limit=limit)
+
+    def aios_gate(self, candidate_id: Optional[str] = None, *, limit: int = 8) -> Dict[str, Any]:
+        return self._get_aios_bridge().gate(candidate_id=candidate_id, limit=limit)

@@ -24,6 +24,7 @@ def make_aios_root(tmp_path):
         "silas_aios/search/skilltree.md",
         "silas_aios/adapters/codex_skilltree_adapter.md",
         "silas_aios/selector/policy.md",
+        "silas_aios/selector/boundary_gate.md",
         "silas_aios/ledgers/context_ledger.md",
         "silas_aios/ledgers/budget_ledger.md",
         "silas_aios/maps/architecture_map.md",
@@ -41,6 +42,7 @@ def make_aios_root(tmp_path):
         ".codex/skills/sic-silas-aios/scripts/aios_search.py",
         ".codex/skills/sic-silas-aios/scripts/aios_select.py",
         ".codex/skills/sic-silas-aios/scripts/aios_skilltree_adapter.py",
+        ".codex/skills/sic-silas-aios/scripts/aios_gate.py",
     ]
     for rel in required:
         _write(root / rel, f"# {rel}\nAIOS searchable content\n")
@@ -111,6 +113,23 @@ def test_aios_bridge_selects_advisory_dna_sequence(tmp_path):
     ]
 
 
+def test_aios_gate_allows_only_selected_non_approval_candidate(tmp_path):
+    root = make_aios_root(tmp_path)
+    bridge = AIOSBridge(root=root, use_installed_skilltree=False)
+
+    selected_gate = bridge.gate()
+    approval_gate = bridge.gate("live_cave_mcp_wiring")
+    unknown_gate = bridge.gate("not_a_candidate")
+
+    assert selected_gate["candidate_id"] == "codex_skilltree_adapter"
+    assert selected_gate["decision"] == "allowed"
+    assert selected_gate["allowed"] is True
+    assert approval_gate["decision"] == "requires_approval"
+    assert approval_gate["allowed"] is False
+    assert unknown_gate["decision"] == "unknown"
+    assert unknown_gate["allowed"] is False
+
+
 def test_aios_bridge_checkpoints_after_adapter_view_is_current(tmp_path):
     root = make_aios_root(tmp_path)
     view = root / "silas_aios" / "runtime" / "skilltree_codex_view" / ".claude" / "skills"
@@ -124,6 +143,23 @@ def test_aios_bridge_checkpoints_after_adapter_view_is_current(tmp_path):
     assert adapter["status"] == "completed"
     assert selection["selected"]["id"] == "human_checkpoint"
     assert selection["dna_sequence"]["metadata"]["selected_candidate"] == "human_checkpoint"
+
+
+def test_aios_gate_blocks_checkpoint_and_completed_adapter(tmp_path):
+    root = make_aios_root(tmp_path)
+    view = root / "silas_aios" / "runtime" / "skilltree_codex_view" / ".claude" / "skills"
+    view.mkdir(parents=True)
+    (view / "sic-silas-aios").symlink_to(root / ".codex" / "skills" / "sic-silas-aios", target_is_directory=True)
+    bridge = AIOSBridge(root=root, use_installed_skilltree=False)
+
+    checkpoint_gate = bridge.gate()
+    completed_gate = bridge.gate("codex_skilltree_adapter")
+
+    assert checkpoint_gate["candidate_id"] == "human_checkpoint"
+    assert checkpoint_gate["decision"] == "checkpoint"
+    assert checkpoint_gate["allowed"] is False
+    assert completed_gate["decision"] == "completed"
+    assert completed_gate["allowed"] is False
 
 
 def test_aios_bridge_reports_missing_root(tmp_path):
@@ -148,6 +184,7 @@ def test_aios_mixin_delegates_to_bridge(tmp_path):
     assert "Run AIOS bridge assay" in cave.aios_next_action()["next_action"]
     assert cave.aios_search("AIOS", domain="skills")["results"]
     assert cave.aios_select_next()["selected"]["id"] == "codex_skilltree_adapter"
+    assert cave.aios_gate()["decision"] == "allowed"
 
 
 def test_http_aios_routes_delegate_to_cave(monkeypatch):
@@ -170,15 +207,21 @@ def test_http_aios_routes_delegate_to_cave(monkeypatch):
             calls.append(("select", data))
             return {"selected": {"id": "candidate"}}
 
+        def aios_gate(self, **data):
+            calls.append(("gate", data))
+            return {"decision": "checkpoint"}
+
     monkeypatch.setattr(http_server, "cave", HttpFakeCave())
 
     assert http_server.get_aios_status() == {"status": "ok"}
     assert http_server.get_aios_next_action() == {"next_action": "act"}
     assert http_server.search_aios({"query": "AIOS", "domain": "skills", "limit": 3}) == {"results": []}
     assert http_server.select_aios_next({"limit": 2}) == {"selected": {"id": "candidate"}}
+    assert http_server.gate_aios_candidate({"candidate_id": "live_cave_mcp_wiring", "limit": 4}) == {"decision": "checkpoint"}
     assert calls == [
         ("status", None),
         ("next", None),
         ("search", {"query": "AIOS", "domain": "skills", "limit": 3}),
         ("select", {"limit": 2}),
+        ("gate", {"candidate_id": "live_cave_mcp_wiring", "limit": 4}),
     ]

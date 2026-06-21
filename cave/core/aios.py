@@ -17,6 +17,7 @@ DEFAULT_REQUIRED_PATHS = [
     "silas_aios/search/skilltree.md",
     "silas_aios/adapters/codex_skilltree_adapter.md",
     "silas_aios/selector/policy.md",
+    "silas_aios/selector/boundary_gate.md",
     "silas_aios/ledgers/context_ledger.md",
     "silas_aios/ledgers/budget_ledger.md",
     "silas_aios/maps/architecture_map.md",
@@ -34,6 +35,7 @@ DEFAULT_REQUIRED_PATHS = [
     ".codex/skills/sic-silas-aios/scripts/aios_search.py",
     ".codex/skills/sic-silas-aios/scripts/aios_select.py",
     ".codex/skills/sic-silas-aios/scripts/aios_skilltree_adapter.py",
+    ".codex/skills/sic-silas-aios/scripts/aios_gate.py",
 ]
 
 DEFAULT_EXTS = (".md", ".txt", ".mdx", ".rst")
@@ -240,6 +242,68 @@ class AIOSBridge:
             ),
         )
         return self._selection_payload(root, status, selected, candidates, limit=limit)
+
+    def gate(self, candidate_id: Optional[str] = None, *, limit: int = 8) -> Dict[str, Any]:
+        """Return a non-executing boundary decision for an AIOS candidate."""
+        selection = self.select_next(limit=limit)
+        if selection.get("status") != "ok":
+            return {
+                "status": selection.get("status", "drift"),
+                "root": selection.get("root"),
+                "candidate_id": candidate_id,
+                "allowed": False,
+                "decision": "blocked",
+                "reason": "AIOS status is not ok; repair drift before executing candidates.",
+                "selection": selection,
+            }
+
+        candidates: Dict[str, Dict[str, Any]] = {}
+        selected = selection.get("selected") or {}
+        if selected.get("id"):
+            candidates[selected["id"]] = selected
+        for candidate in selection.get("candidates", []):
+            if candidate.get("id"):
+                candidates[candidate["id"]] = candidate
+
+        target_id = candidate_id or selected.get("id")
+        target = candidates.get(target_id or "")
+        if target is None:
+            return {
+                "status": "ok",
+                "root": selection.get("root"),
+                "candidate_id": target_id,
+                "allowed": False,
+                "decision": "unknown",
+                "reason": f"Unknown AIOS candidate: {target_id}",
+                "known_candidates": sorted(candidates),
+                "selection": selection,
+            }
+
+        decision, allowed, reason = self._gate_decision(target, selected)
+        return {
+            "status": "ok",
+            "root": selection.get("root"),
+            "candidate_id": target_id,
+            "allowed": allowed,
+            "decision": decision,
+            "reason": reason,
+            "candidate": target,
+            "selected_candidate_id": selected.get("id"),
+            "evidence_files": target.get("evidence_files", []),
+            "selection_status": selection.get("status"),
+        }
+
+    def _gate_decision(self, candidate: Dict[str, Any], selected: Dict[str, Any]) -> tuple[str, bool, str]:
+        status = candidate.get("status")
+        if status == "completed":
+            return "completed", False, "Candidate is already complete; do not repeat it."
+        if status == "checkpoint" or candidate.get("category") == "checkpoint":
+            return "checkpoint", False, "Human checkpoint selected; ask Isaac before crossing approval boundaries."
+        if candidate.get("requires_approval"):
+            return "requires_approval", False, "Candidate requires explicit approval before execution."
+        if selected.get("id") != candidate.get("id"):
+            return "not_selected", False, "Candidate is not the current selected AIOS move."
+        return "allowed", True, "Candidate is the selected non-approval move."
 
     def _build_candidates(self, root: Path, status: Dict[str, Any]) -> List[Dict[str, Any]]:
         missing = status.get("missing", [])

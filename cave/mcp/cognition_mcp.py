@@ -171,6 +171,12 @@ def aios_select_next(limit: int = 8) -> dict:
 
 
 @mcp.tool()
+def aios_gate(candidate_id: Optional[str] = None, limit: int = 8) -> dict:
+    """Check whether an AIOS candidate is lawful to execute now."""
+    return _post("/aios/gate", {"candidate_id": candidate_id, "limit": limit})
+
+
+@mcp.tool()
 def dna_create_config(
     name: str,
     loop_names: list[str],

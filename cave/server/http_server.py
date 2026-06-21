@@ -330,6 +330,16 @@ def select_aios_next(data: Dict[str, Any] | None = None):
     return cave.aios_select_next(limit=int(data.get("limit", 8)))
 
 
+@app.post("/aios/gate")
+def gate_aios_candidate(data: Dict[str, Any] | None = None):
+    """Check whether an AIOS candidate is lawful to execute now."""
+    data = data or {}
+    return cave.aios_gate(
+        candidate_id=data.get("candidate_id"),
+        limit=int(data.get("limit", 8)),
+    )
+
+
 # === DNA (Auto Mode) Endpoints ===
 @app.get("/dna/status")
 def get_dna_status():
