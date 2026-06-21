@@ -40,6 +40,9 @@ dev = [
 
 [project.scripts]
 cave-server = "cave.server.http_server:run_server"
+cave-paia-relays = "cave.relays.paia:cli_main"
+cave-paia-loop-probe = "cave.relays.loop_probe:cli_main"
+cave-cognition-mcp = "cave.mcp.cognition_mcp:main"
 
 [project.urls]
 Homepage = "https://github.com/sancovp/cave"

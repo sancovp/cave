@@ -13,6 +13,8 @@ from .omnisanc import OmnisancMixin
 from .anatomy import AnatomyMixin, Organ, Heart, Blood, Ears, Tick
 from .automation_mixin import AutomationMixin
 from .tui import TUIMixin
+from .cognition import CognitionMixin
+from .aios import AIOSMixin
 
 __all__ = [
     "PAIAStateMixin",
@@ -25,6 +27,8 @@ __all__ = [
     "OmnisancMixin",
     "AnatomyMixin",
     "AutomationMixin",
+    "CognitionMixin",
+    "AIOSMixin",
     "Organ",
     "Heart",
     "Blood",

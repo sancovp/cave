@@ -39,12 +39,20 @@ from .core.mixins import (
 
 # === Hooks (define hooks in code) ===
 from .core.hooks import (
+    CodeAgentHook,
     ClaudeCodeHook,
+    CodexHook,
+    HookProvider,
     HookType,
     HookDecision,
     HookResult,
     HookRegistry,
     RegistryEntry,
+    canonical_hook_type,
+    format_hook_response,
+    get_hook_types_for_provider,
+    hook_type_key,
+    normalize_provider,
 )
 
 __version__ = "0.1.0"
@@ -78,10 +86,18 @@ __all__ = [
     "RemoteAgentMixin",
     "SSEMixin",
     # Hooks
+    "CodeAgentHook",
     "ClaudeCodeHook",
+    "CodexHook",
+    "HookProvider",
     "HookType",
     "HookDecision",
     "HookResult",
     "HookRegistry",
     "RegistryEntry",
+    "canonical_hook_type",
+    "format_hook_response",
+    "get_hook_types_for_provider",
+    "hook_type_key",
+    "normalize_provider",
 ]

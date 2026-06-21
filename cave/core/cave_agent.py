@@ -61,7 +61,7 @@ Unified CAVE runtime state. HTTP routes are in server/http_server.py.
 import subprocess
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -72,7 +72,7 @@ from .models import PAIAState, AgentRegistration, RemoteAgentHandle, CaveAgentEn
 from .agent import Agent, ChatAgent, CodeAgent, ClawAgent, ServiceAgent, RemoteAgent, AgentConfig, CodeAgentConfig, ClaudeCodeAgent, ClaudeCodeAgentConfig
 from .channel import CentralChannel
 from .state_reader import ClaudeStateReader
-from .dna import AutoModeDNA
+from .dna import AutoModeDNA, DNAConfigStore, create_dna
 from .mixins import (
     PAIAStateMixin,
     AgentRegistryMixin,
@@ -84,6 +84,8 @@ from .mixins import (
     OmnisancMixin,
     AnatomyMixin,
     AutomationMixin,
+    CognitionMixin,
+    AIOSMixin,
     TUIMixin,
 )
 from .config_snapshots import MainAgentConfigManager
@@ -102,6 +104,8 @@ class CAVEAgent(
     OmnisancMixin,
     AnatomyMixin,
     AutomationMixin,
+    CognitionMixin,
+    AIOSMixin,
     TUIMixin,
 ):
     """Unified CAVE runtime state. Routes are in http_server.py."""
@@ -234,6 +238,9 @@ class CAVEAgent(
         # === Data directories ===
         self.config.data_dir.mkdir(parents=True, exist_ok=True)
         self.config.hook_dir.mkdir(parents=True, exist_ok=True)
+        self.dna_config_store = DNAConfigStore(self.config.data_dir)
+        self._init_cognition()
+        self._init_aios_bridge()
 
         # === Main Agent Config Archives ===
         self.config_manager = MainAgentConfigManager(
@@ -880,6 +887,72 @@ class CAVEAgent(
         """Start auto mode with given DNA."""
         self.dna = dna
         return self.dna.start(self)
+
+    def create_dna_config(self, **data: Any) -> Dict[str, Any]:
+        """Create and optionally select a durable AutoModeDNA config."""
+        return self.dna_config_store.create_config(**data)
+
+    def list_dna_configs(self) -> Dict[str, Any]:
+        """List selectable AutoModeDNA configs."""
+        return self.dna_config_store.list_configs()
+
+    def get_dna_config(self, name: str) -> Dict[str, Any]:
+        """Load a named AutoModeDNA config."""
+        return self.dna_config_store.get_config(name)
+
+    def select_dna_config(self, name: str) -> Dict[str, Any]:
+        """Select the named AutoModeDNA config as current."""
+        return self.dna_config_store.select_config(name)
+
+    def get_selected_dna_config(self) -> Dict[str, Any]:
+        """Return the selected AutoModeDNA config, if any."""
+        config = self.dna_config_store.get_current_config()
+        return {"current": config, "selection": self.dna_config_store.get_current_selection()}
+
+    def start_dna_config(self, name: Optional[str] = None) -> Dict[str, Any]:
+        """Start a named DNA config, or the currently selected config."""
+        dna = self.dna_config_store.build_dna(name)
+        return self.start_auto_mode(dna)
+
+    def set_dna_sequence(self, **data: Any) -> Dict[str, Any]:
+        """Set the live DNA follow-through sequence."""
+        return self.dna_config_store.set_sequence(**data)
+
+    def get_dna_sequence(self) -> Dict[str, Any]:
+        """Return the live DNA follow-through sequence."""
+        sequence = self.dna_config_store.get_sequence()
+        return {"sequence": sequence, "path": sequence.get("path") if sequence else None}
+
+    def clear_dna_sequence(self) -> Dict[str, Any]:
+        """Clear the live DNA follow-through sequence."""
+        return self.dna_config_store.clear_sequence()
+
+    def get_next_dna_step(self) -> Dict[str, Any]:
+        """Return the next incomplete DNA sequence step."""
+        return self.dna_config_store.get_next_step()
+
+    def complete_dna_step(self, **data: Any) -> Dict[str, Any]:
+        """Mark a DNA sequence step complete/skipped/in-progress."""
+        return self.dna_config_store.complete_step(**data)
+
+    def get_dna_sequence_stop_check(self) -> Dict[str, Any]:
+        """Return Stop-hook enforcement state for the live DNA sequence."""
+        return self.dna_config_store.sequence_stop_check()
+
+    def start_auto_mode_from_names(
+        self,
+        *,
+        name: str = "auto",
+        loop_names: Optional[List[str]] = None,
+        exit_behavior: str = "cycle",
+    ) -> Dict[str, Any]:
+        """Start direct, request-local DNA without saving it as a config."""
+        dna = create_dna(
+            name=name,
+            loop_names=loop_names or ["autopoiesis"],
+            exit_behavior=exit_behavior,
+        )
+        return self.start_auto_mode(dna)
 
     def stop_auto_mode(self) -> Dict[str, Any]:
         """Stop auto mode."""

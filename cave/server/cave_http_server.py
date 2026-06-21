@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from starlette.responses import StreamingResponse
 
 from ..core.cave_agent import CAVEAgent
+from ..core.hooks import HookProvider, normalize_provider
 from ..core.state_reader import ClaudeStateReader
 from ..core.organ_daemon import run as run_organ_daemon
 from ..core.automation import WebhookAutomation
@@ -170,6 +171,68 @@ class CAVEHTTPServer:
         def list_available_loops():
             return cave.list_available_loops()
 
+        # === Cognition / Reified AgentInferenceLoop ===
+        @self.app.post("/cognition/loops")
+        def create_reified_loop(data: Dict[str, Any]):
+            return cave.create_reified_loop(**data)
+
+        @self.app.get("/cognition/loops/{loop_id}")
+        def get_reified_loop(loop_id: str):
+            return cave.get_reified_loop(loop_id)
+
+        @self.app.post("/cognition/spaces")
+        def create_cognitive_space(data: Dict[str, Any]):
+            return cave.create_cognitive_space(**data)
+
+        @self.app.get("/cognition/spaces/current")
+        def get_current_cognitive_space():
+            return cave.get_current_cognitive_space()
+
+        @self.app.get("/cognition/spaces/{space_id}")
+        def get_cognitive_space(space_id: str):
+            return cave.get_cognitive_space(space_id)
+
+        @self.app.post("/cognition/spaces/{space_id}/current")
+        def set_current_cognitive_space(space_id: str):
+            return cave.set_current_cognitive_space(space_id)
+
+        @self.app.post("/cognition/spaces/{space_id}/kv")
+        def put_cognitive_space_kv(space_id: str, data: Dict[str, Any]):
+            return cave.put_cognitive_kv(
+                space_id=space_id,
+                key=data.get("key"),
+                value=data.get("value"),
+                updates=data.get("updates"),
+            )
+
+        @self.app.post("/cognition/kv")
+        def put_current_cognitive_space_kv(data: Dict[str, Any]):
+            return cave.put_cognitive_kv(
+                key=data.get("key"),
+                value=data.get("value"),
+                updates=data.get("updates"),
+            )
+
+        @self.app.post("/cognition/spaces/{space_id}/evidence")
+        def add_cognitive_evidence_file(space_id: str, data: Dict[str, Any]):
+            return cave.add_cognitive_evidence_file(space_id=space_id, path=data.get("path", ""))
+
+        @self.app.post("/cognition/stop-check")
+        def cognition_stop_check(data: Dict[str, Any] | None = None):
+            data = data or {}
+            return cave.cognition_stop_check(
+                space_id=data.get("space_id"),
+                hook_payload=data.get("hook_payload"),
+            )
+
+        @self.app.post("/cognition/install-stop-hook")
+        def install_cognition_stop_hook(data: Dict[str, Any] | None = None):
+            data = data or {}
+            return cave.install_cognition_stop_hook(
+                activate=bool(data.get("activate", False)),
+                hook_name=data.get("hook_name", "cognitive_space_stop_check"),
+            )
+
         # === DNA ===
         @self.app.get("/dna/status")
         def get_dna_status():
@@ -177,13 +240,64 @@ class CAVEHTTPServer:
 
         @self.app.post("/dna/start")
         def start_auto_mode(data: Dict[str, Any]):
-            from ..core.dna import create_dna
-            dna = create_dna(
+            return cave.start_auto_mode_from_names(
                 name=data.get("name", "auto"),
                 loop_names=data.get("loop_names", ["autopoiesis"]),
                 exit_behavior=data.get("exit_behavior", "cycle"),
             )
-            return cave.start_auto_mode(dna)
+
+        @self.app.get("/dna/configs")
+        def list_dna_configs():
+            return cave.list_dna_configs()
+
+        @self.app.post("/dna/configs")
+        def create_dna_config(data: Dict[str, Any]):
+            """Create a durable config; loop_names may include `dna:<config_name>` refs."""
+            return cave.create_dna_config(**data)
+
+        @self.app.get("/dna/configs/current")
+        def get_selected_dna_config():
+            return cave.get_selected_dna_config()
+
+        @self.app.post("/dna/configs/current/start")
+        def start_selected_dna_config():
+            return cave.start_dna_config()
+
+        @self.app.get("/dna/configs/{name}")
+        def get_dna_config(name: str):
+            return cave.get_dna_config(name)
+
+        @self.app.post("/dna/configs/{name}/select")
+        def select_dna_config(name: str):
+            return cave.select_dna_config(name)
+
+        @self.app.post("/dna/configs/{name}/start")
+        def start_named_dna_config(name: str):
+            return cave.start_dna_config(name)
+
+        @self.app.get("/dna/sequence")
+        def get_dna_sequence():
+            return cave.get_dna_sequence()
+
+        @self.app.post("/dna/sequence")
+        def set_dna_sequence(data: Dict[str, Any]):
+            return cave.set_dna_sequence(**data)
+
+        @self.app.delete("/dna/sequence")
+        def clear_dna_sequence():
+            return cave.clear_dna_sequence()
+
+        @self.app.get("/dna/sequence/next")
+        def get_next_dna_step():
+            return cave.get_next_dna_step()
+
+        @self.app.post("/dna/sequence/complete")
+        def complete_dna_step(data: Dict[str, Any]):
+            return cave.complete_dna_step(**data)
+
+        @self.app.get("/dna/sequence/stop-check")
+        def get_dna_sequence_stop_check():
+            return cave.get_dna_sequence_stop_check()
 
         @self.app.post("/dna/stop")
         def stop_auto_mode():
@@ -209,7 +323,8 @@ class CAVEHTTPServer:
         # === Hooks ===
         @self.app.post("/hook/{hook_type}")
         def handle_hook_signal(hook_type: str, data: Dict[str, Any]):
-            cave.run_omnisanc()
+            if normalize_provider(data.get("source")) != HookProvider.CODEX.value:
+                cave.run_omnisanc()
             return cave.handle_hook(hook_type, data)
 
         @self.app.post("/hooks/scan")

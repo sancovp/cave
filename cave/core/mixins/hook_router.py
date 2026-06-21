@@ -7,6 +7,8 @@ import logging
 import time
 from typing import Any, Callable, Dict, List, Optional, TYPE_CHECKING
 
+from ..hooks import HookProvider, format_hook_response, hook_type_key, normalize_provider
+
 # DISABLED: see comment in dispatch_hook — capability_resolver was firing RAG on every hook
 # from ..capability_resolver import get_capability_context_for_hook
 
@@ -55,38 +57,46 @@ class HookRouterMixin:
             Response dict with at minimum {"result": "continue"|"block"}
             Can include "additionalContext" to inject into Claude
         """
-        # Detect OpenClaw source and normalize payload format
-        source = payload.pop("source", "claude_code")
-        if source == "openclaw":
+        # Detect source provider and normalize payload format
+        source = normalize_provider(payload.pop("source", HookProvider.CLAUDE_CODE.value))
+        if source == HookProvider.OPENCLAW.value:
             payload = self._normalize_openclaw_payload(hook_type, payload)
             self._hook_state["current_source"] = "openclaw"
+        elif source == HookProvider.CODEX.value:
+            payload = self._normalize_codex_payload(hook_type, payload)
+            self._hook_state["current_source"] = "codex"
         else:
             self._hook_state["current_source"] = "claude_code"
 
         # Normalize hook type to lowercase
-        hook_type_lower = hook_type.lower()
+        hook_type_lower = hook_type_key(hook_type)
+
+        event = {
+            "hook_type": hook_type,
+            "payload": payload,
+            "source": source,
+            "ts": time.time(),
+        }
+
+        # Observe every provider signal before deciding whether higher-level
+        # CAVE hook logic is active. The relay layer is useful even when it is
+        # only feeding the daemon's event memory.
+        self._hook_history.append(event)
+        if len(self._hook_history) > 100:
+            self._hook_history = self._hook_history[-100:]
 
         # Get active hooks for this type from main agent config
         active_hook_names = self.config.main_agent_config.active_hooks.get(hook_type_lower, [])
 
         if not active_hook_names:
-            return {"result": "continue", "hook_type": hook_type, "active_hooks": []}
-
-        event = {
-            "hook_type": hook_type,
-            "payload": payload,
-            "ts": time.time(),
-        }
-
-        # Record in history (keep last 100)
-        self._hook_history.append(event)
-        if len(self._hook_history) > 100:
-            self._hook_history = self._hook_history[-100:]
+            response = {"result": "continue", "hook_type": hook_type, "active_hooks": []}
+            return format_hook_response(response, source, hook_type)
 
         # Get hooks from registry, filtered by active names
         all_hooks = self.hook_registry.get_hooks_for_type(hook_type_lower)
         hooks = [h for h in all_hooks if h.name in active_hook_names]
         additional_context = []
+        response_extras: Dict[str, Any] = {}
         hooks_called = 0
 
         # DISABLED: Was calling flight_predictor/unified_rag on EVERY hook dispatch.
@@ -104,14 +114,37 @@ class HookRouterMixin:
                 # Collect any context injections
                 if result.get("additionalContext"):
                     additional_context.append(result["additionalContext"])
+                if result.get("decision") and result.get("decision") != "continue":
+                    response_extras["decision"] = result["decision"]
+                if result.get("systemMessage"):
+                    response_extras["systemMessage"] = result["systemMessage"]
+                if "continue" in result:
+                    response_extras["continue"] = result["continue"]
+                if result.get("stopReason"):
+                    response_extras["stopReason"] = result["stopReason"]
+                if result.get("suppressOutput") is not None:
+                    response_extras["suppressOutput"] = result["suppressOutput"]
+                if result.get("updatedInput") is not None:
+                    response_extras["updatedInput"] = result["updatedInput"]
 
                 # Check for block signal
                 if result.get("decision") == "block":
-                    return {
+                    response = {
                         "result": "block",
                         "reason": result.get("reason", "Hook blocked"),
                         "additionalContext": "\n".join(additional_context) if additional_context else None,
                     }
+                    if result.get("systemMessage"):
+                        response["systemMessage"] = result["systemMessage"]
+                    if "continue" in result:
+                        response["continue"] = result["continue"]
+                    if result.get("stopReason"):
+                        response["stopReason"] = result["stopReason"]
+                    if result.get("suppressOutput") is not None:
+                        response["suppressOutput"] = result["suppressOutput"]
+                    if result.get("updatedInput") is not None:
+                        response["updatedInput"] = result["updatedInput"]
+                    return format_hook_response(response, source, hook_type)
             except Exception as e:
                 logger.error(f"Hook {hook.name} failed: {e}")
                 continue
@@ -126,11 +159,12 @@ class HookRouterMixin:
             "hooks_called": hooks_called,
             "dna": dna_result,
         }
+        response.update(response_extras)
 
         if additional_context:
             response["additionalContext"] = "\n".join(additional_context)
 
-        return response
+        return format_hook_response(response, source, hook_type)
 
     def scan_hooks(self) -> Dict[str, Any]:
         """Rescan hooks directory and update registry."""
@@ -210,6 +244,35 @@ class HookRouterMixin:
 
         # Log the normalization for debugging
         logger.debug(f"Normalized OpenClaw payload for {hook_type}: {list(normalized.keys())}")
+
+        return normalized
+
+    def _normalize_codex_payload(self, hook_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize Codex hook payloads to CAVE's shared hook field names.
+
+        Codex already uses Claude-like names for most tool hooks. This method
+        mainly fills compatibility aliases so older CAVE hooks can read either
+        provider without caring where the event came from.
+        """
+        hook_type_lower = hook_type_key(hook_type)
+        normalized = payload.copy()
+
+        if hook_type_lower == "userpromptsubmit":
+            if "prompt" in payload and "user_input" not in payload:
+                normalized["user_input"] = payload.get("prompt")
+
+        elif hook_type_lower in ("pretooluse", "permissionrequest"):
+            if "tool_input" in payload and "tool_use_input" not in payload:
+                normalized["tool_use_input"] = payload.get("tool_input")
+
+        elif hook_type_lower == "posttooluse":
+            if "tool_response" in payload and "tool_result" not in payload:
+                normalized["tool_result"] = payload.get("tool_response")
+            if "tool_input" in payload and "tool_use_input" not in payload:
+                normalized["tool_use_input"] = payload.get("tool_input")
+
+        logger.debug(f"Normalized Codex payload for {hook_type}: {list(normalized.keys())}")
 
         return normalized
 

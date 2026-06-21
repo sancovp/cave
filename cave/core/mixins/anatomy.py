@@ -3,6 +3,7 @@
 The agent body: Heart (pumps prompts), Blood (carries context), Ears (listen for messages).
 """
 import asyncio
+import inspect
 import logging
 import os
 import threading
@@ -292,7 +293,9 @@ class Ears(Organ):
             return []
 
         self._last_check = datetime.utcnow().isoformat()
-        responses = await agent.check_inbox()
+        responses = agent.check_inbox()
+        if inspect.isawaitable(responses):
+            responses = await responses
 
         if responses:
             self._messages_processed += len(responses)
@@ -374,6 +377,11 @@ class Ears(Organ):
                     self._ping_discord(event.content, channel_id=sanctum_ch)
                     # Route journal/friendship rituals to autobiographer
                     self._route_sanctum_trigger(event)
+                elif event.source == "discord":
+                    # Discord is routed through CentralChannel perception now.
+                    # Skip world-level Discord events to avoid duplicate delivery.
+                    self._world_events_processed += 1
+                    continue
                 else:
                     self._agent_ref.route_message(
                         from_agent=f"world:{event.source}",
@@ -453,6 +461,11 @@ class Ears(Organ):
             discord_config = load_discord_config()
             self._isaac_user_id = discord_config.get("isaac_user_id")
 
+        metadata = getattr(event, "metadata", None)
+        if metadata is None:
+            metadata = {}
+            event.metadata = metadata
+
         # Check for commands first
         is_command = False
         cmd = _detect_command(event.content)
@@ -461,12 +474,12 @@ class Ears(Organ):
             logger.info("Ears: command detected: %s %s", command, argument)
             _handle_command(command, argument, source="discord")
             is_command = True
-            event.metadata["command"] = True
-            event.metadata["command_type"] = command
-            event.metadata["command_arg"] = argument
+            metadata["command"] = True
+            metadata["command_type"] = command
+            metadata["command_arg"] = argument
 
         # Route by sender
-        sender_id = event.metadata.get("discord_user_id", "")
+        sender_id = metadata.get("discord_user_id", "")
         if self._isaac_user_id and sender_id == self._isaac_user_id and not is_command:
             # Isaac's messages → conductor inbox
             self._agent_ref.route_message(
@@ -475,7 +488,7 @@ class Ears(Organ):
                 content=event.content,
                 priority=event.priority,
                 ingress="discord",
-                metadata=event.metadata,
+                metadata=metadata,
             )
             logger.info("Ears: Conductor <- Isaac: %s", event.content[:80])
         else:

@@ -25,9 +25,11 @@ class CAVEConfig(BaseModel):
     port: int = 8080
 
     # === Paths ===
-    data_dir: Path = Field(default_factory=lambda: Path("/tmp/heaven_data"))
+    data_dir: Path = Field(default_factory=lambda: Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")))
     hook_dir: Path = Field(default_factory=lambda: Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "cave_hooks")
     claude_home: Path = Field(default_factory=Path.home)  # Where .claude/ lives (e.g., /home/GOD)
+    aios_root: Optional[Path] = Field(default_factory=lambda: Path(os.environ["SILAS_AIOS_ROOT"]) if os.environ.get("SILAS_AIOS_ROOT") else None)
+    aios_skilltree_src: Optional[Path] = Field(default_factory=lambda: Path(os.environ["SILAS_SKILLTREE_SRC"]) if os.environ.get("SILAS_SKILLTREE_SRC") else None)
 
     # === System Prompt Templating ===
     system_prompt_template_path: Optional[Path] = None  # Path to template file
@@ -90,16 +92,25 @@ class CAVEConfig(BaseModel):
         if CAVE_AGENT_CONFIG_PATH.exists():
             data = json.loads(CAVE_AGENT_CONFIG_PATH.read_text())
             config = cls.model_validate(data)
+            config._migrate_legacy_data_dir()
 
             # B) If restart_config is set, load that named archive
             if config.restart_config:
                 archive_path = CAVE_CONFIG_ARCHIVES_DIR / f"{config.restart_config}.json"
                 if archive_path.exists():
                     archive_data = json.loads(archive_path.read_text())
-                    return cls.model_validate(archive_data)
+                    archive_config = cls.model_validate(archive_data)
+                    archive_config._migrate_legacy_data_dir()
+                    return archive_config
 
             return config
         # Create default and save it
         config = cls()
         config.save()
         return config
+
+    def _migrate_legacy_data_dir(self) -> None:
+        """Honor HEAVEN_DATA_DIR when stored config still has the old default."""
+        env_data_dir = os.environ.get("HEAVEN_DATA_DIR")
+        if env_data_dir and self.data_dir == Path("/tmp/heaven_data"):
+            self.data_dir = Path(env_data_dir)

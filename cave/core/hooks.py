@@ -1,28 +1,69 @@
-"""ClaudeCodeHook - Define hooks in code.
+"""Provider-neutral code-agent hooks.
 
-Hooks receive signals from Claude Code (via HTTP relay) and return decisions.
-This lets you define hook behavior as Python classes in CAVE.
+Hooks receive lifecycle signals from terminal code agents via HTTP relay and
+return decisions. Claude Code remains the first supported provider, but the
+base classes and event vocabulary are intentionally provider-neutral so CAVE
+can route Codex and other agent hooks through the same registry.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 
+class HookProvider(str, Enum):
+    """Known hook-producing code-agent providers."""
+    CAVE = "cave"
+    CLAUDE_CODE = "claude_code"
+    CODEX = "codex"
+    OPENCLAW = "openclaw"
+
+
 class HookType(str, Enum):
-    """Claude Code hook types."""
+    """Provider-neutral hook event names.
+
+    Values intentionally use provider wire names where possible. Claude Code's
+    current hook reference has the widest event vocabulary, so this enum is the
+    superset CAVE routes through. Providers can support a subset.
+    """
+    SESSION_START = "SessionStart"
+    SETUP = "Setup"
+    INSTRUCTIONS_LOADED = "InstructionsLoaded"
     PRE_TOOL_USE = "PreToolUse"
+    PERMISSION_REQUEST = "PermissionRequest"
     POST_TOOL_USE = "PostToolUse"
+    POST_TOOL_USE_FAILURE = "PostToolUseFailure"
+    POST_TOOL_BATCH = "PostToolBatch"
+    PERMISSION_DENIED = "PermissionDenied"
     USER_PROMPT_SUBMIT = "UserPromptSubmit"
+    USER_PROMPT_EXPANSION = "UserPromptExpansion"
+    MESSAGE_DISPLAY = "MessageDisplay"
     NOTIFICATION = "Notification"
+    SUBAGENT_START = "SubagentStart"
+    SUBAGENT_STOP = "SubagentStop"
+    TASK_CREATED = "TaskCreated"
+    TASK_COMPLETED = "TaskCompleted"
     STOP = "Stop"
+    STOP_FAILURE = "StopFailure"
+    TEAMMATE_IDLE = "TeammateIdle"
+    CONFIG_CHANGE = "ConfigChange"
+    CWD_CHANGED = "CwdChanged"
+    FILE_CHANGED = "FileChanged"
+    WORKTREE_CREATE = "WorktreeCreate"
+    WORKTREE_REMOVE = "WorktreeRemove"
+    PRE_COMPACT = "PreCompact"
+    POST_COMPACT = "PostCompact"
+    SESSION_END = "SessionEnd"
+    ELICITATION = "Elicitation"
+    ELICITATION_RESULT = "ElicitationResult"
+    # Legacy CAVE/Claude-era name kept so old hook files still load.
     SUBAGENT_SPAWN = "SubagentSpawn"
 
 
 class HookDecision(str, Enum):
-    """What the hook decides."""
+    """Provider-neutral hook decision vocabulary."""
     APPROVE = "approve"    # Let it proceed
     BLOCK = "block"        # Stop/reject
     CONTINUE = "continue"  # Continue (for non-stop hooks)
@@ -30,27 +71,45 @@ class HookDecision(str, Enum):
 
 @dataclass
 class HookResult:
-    """Result from a hook."""
+    """Provider-neutral result from a code-agent hook."""
     decision: HookDecision
     reason: Optional[str] = None
     additional_context: Optional[str] = None
+    system_message: Optional[str] = None
+    continue_: Optional[bool] = None
+    stop_reason: Optional[str] = None
+    suppress_output: Optional[bool] = None
+    updated_input: Optional[Dict[str, Any]] = None
+    metadata: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to Claude Code response format."""
+        """Convert to CAVE's internal hook response format."""
         result = {"decision": self.decision.value}
         if self.reason:
             result["reason"] = self.reason
         if self.additional_context:
             result["additionalContext"] = self.additional_context
+        if self.system_message:
+            result["systemMessage"] = self.system_message
+        if self.continue_ is not None:
+            result["continue"] = self.continue_
+        if self.stop_reason:
+            result["stopReason"] = self.stop_reason
+        if self.suppress_output is not None:
+            result["suppressOutput"] = self.suppress_output
+        if self.updated_input is not None:
+            result["updatedInput"] = self.updated_input
+        if self.metadata:
+            result["metadata"] = self.metadata
         return result
 
 
-class ClaudeCodeHook(ABC):
+class CodeAgentHook(ABC):
     """Base class for hooks defined in code.
 
     Subclass this to create hooks:
 
-        class MyStopHook(ClaudeCodeHook):
+        class MyStopHook(CodeAgentHook):
             hook_type = HookType.STOP
 
             def handle(self, payload, state):
@@ -59,7 +118,8 @@ class ClaudeCodeHook(ABC):
                 return HookResult(HookDecision.APPROVE)
     """
 
-    hook_type: HookType = None  # Override in subclass
+    provider: Optional[HookProvider] = None
+    hook_type: Optional[HookType] = None  # Override in subclass
     name: str = None  # Optional name, defaults to class name
 
     def __init__(self, name: str = None):
@@ -72,7 +132,7 @@ class ClaudeCodeHook(ABC):
         """Handle the hook. Override this.
 
         Args:
-            payload: Data from Claude Code (tool_name, tool_input, etc.)
+            payload: Normalized provider event payload.
             state: Persistent state dict (shared across hook calls)
 
         Returns:
@@ -86,6 +146,151 @@ class ClaudeCodeHook(ABC):
         return result.to_dict()
 
 
+class ClaudeCodeHook(CodeAgentHook):
+    """Compatibility base for existing Claude Code hooks."""
+
+    provider = HookProvider.CLAUDE_CODE
+
+
+class CodexHook(CodeAgentHook):
+    """Base class for Codex-specific hooks when provider behavior matters."""
+
+    provider = HookProvider.CODEX
+
+
+CLAUDE_CODE_HOOK_TYPES = frozenset(
+    hook.value
+    for hook in HookType
+    if hook is not HookType.SUBAGENT_SPAWN
+)
+
+CODEX_HOOK_TYPES = frozenset({
+    HookType.SESSION_START.value,
+    HookType.PRE_TOOL_USE.value,
+    HookType.PERMISSION_REQUEST.value,
+    HookType.POST_TOOL_USE.value,
+    HookType.PRE_COMPACT.value,
+    HookType.POST_COMPACT.value,
+    HookType.USER_PROMPT_SUBMIT.value,
+    HookType.SUBAGENT_START.value,
+    HookType.SUBAGENT_STOP.value,
+    HookType.STOP.value,
+})
+
+PROVIDER_HOOK_TYPES = {
+    HookProvider.CLAUDE_CODE.value: CLAUDE_CODE_HOOK_TYPES,
+    HookProvider.CODEX.value: CODEX_HOOK_TYPES,
+}
+
+
+def canonical_hook_type(hook_type: Any) -> str:
+    """Return the canonical wire name for a hook event."""
+    if isinstance(hook_type, HookType):
+        return hook_type.value
+
+    hook_type_str = str(hook_type)
+    for known in HookType:
+        if known.value.lower() == hook_type_str.lower():
+            return known.value
+    return hook_type_str
+
+
+def hook_type_key(hook_type: Any) -> str:
+    """Normalize hook event names for registry/config keys."""
+    return canonical_hook_type(hook_type).lower()
+
+
+def normalize_provider(provider: Any) -> str:
+    """Normalize provider names used by hook relays."""
+    if isinstance(provider, HookProvider):
+        return provider.value
+    provider_str = str(provider or HookProvider.CLAUDE_CODE.value).lower()
+    if provider_str in ("claude", "claude-code", "claude_code"):
+        return HookProvider.CLAUDE_CODE.value
+    if provider_str in ("codex", "openai_codex", "openai-codex"):
+        return HookProvider.CODEX.value
+    if provider_str in ("openclaw", "open_claw"):
+        return HookProvider.OPENCLAW.value
+    return provider_str
+
+
+def get_hook_types_for_provider(provider: Any) -> frozenset:
+    """Return the hook event set supported by a provider."""
+    return PROVIDER_HOOK_TYPES.get(normalize_provider(provider), frozenset())
+
+
+def format_hook_response(response: Dict[str, Any], provider: Any, hook_type: Any) -> Dict[str, Any]:
+    """Translate CAVE's internal hook response to provider-facing JSON."""
+    provider_name = normalize_provider(provider)
+    if provider_name == HookProvider.CODEX.value:
+        return _format_codex_response(response, hook_type)
+    return response
+
+
+def _format_codex_response(response: Dict[str, Any], hook_type: Any) -> Dict[str, Any]:
+    """Translate CAVE hook results to Codex stdout JSON shape."""
+    event_name = canonical_hook_type(hook_type)
+    decision = response.get("decision")
+    blocked = response.get("result") == "block" or decision == HookDecision.BLOCK.value
+    additional_context = response.get("additionalContext")
+    reason = response.get("reason") or response.get("stopReason")
+
+    result: Dict[str, Any] = {}
+    if response.get("systemMessage"):
+        result["systemMessage"] = response["systemMessage"]
+    if "continue" in response:
+        result["continue"] = response["continue"]
+    if response.get("stopReason"):
+        result["stopReason"] = response["stopReason"]
+    if response.get("suppressOutput") is not None:
+        result["suppressOutput"] = response["suppressOutput"]
+
+    if blocked:
+        result["decision"] = "block"
+        if reason:
+            result["reason"] = reason
+
+    if event_name == HookType.PERMISSION_REQUEST.value:
+        if blocked:
+            result["hookSpecificOutput"] = {
+                "hookEventName": event_name,
+                "decision": {
+                    "behavior": "deny",
+                    "message": reason or "Blocked by CAVE hook",
+                },
+            }
+        elif decision == HookDecision.APPROVE.value:
+            result["hookSpecificOutput"] = {
+                "hookEventName": event_name,
+                "decision": {"behavior": "allow"},
+            }
+        return result
+
+    if event_name == HookType.PRE_TOOL_USE.value and response.get("updatedInput") is not None:
+        result["hookSpecificOutput"] = {
+            "hookEventName": event_name,
+            "permissionDecision": "allow",
+            "updatedInput": response["updatedInput"],
+        }
+        return result
+
+    if event_name == HookType.PRE_TOOL_USE.value and blocked:
+        result["hookSpecificOutput"] = {
+            "hookEventName": event_name,
+            "permissionDecision": "deny",
+            "permissionDecisionReason": reason or "Blocked by CAVE hook",
+        }
+        return result
+
+    if additional_context:
+        result["hookSpecificOutput"] = {
+            "hookEventName": event_name,
+            "additionalContext": additional_context,
+        }
+
+    return result
+
+
 # =============================================================================
 # SCRIPT HOOK ADAPTER
 # =============================================================================
@@ -95,7 +300,7 @@ import subprocess
 
 
 class ScriptHookAdapter:
-    """Wraps a standalone script (with main()) to be callable like ClaudeCodeHook.
+    """Wraps a standalone script (with main()) to be callable like CodeAgentHook.
 
     This enables backwards compatibility - existing scripts that read JSON from
     stdin and print JSON to stdout can be registered and called the same way
@@ -159,7 +364,7 @@ class RegistryEntry:
     path: Path
     hook_type: str  # lowercase: "stop", "pretooluse", etc.
     hook_class: type
-    instance: Optional[ClaudeCodeHook] = None
+    instance: Optional[CodeAgentHook] = None
     error: Optional[str] = None
 
 
@@ -242,29 +447,25 @@ class HookRegistry:
             module = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(module)
 
-            # Find ClaudeCodeHook subclass
+            # Find CodeAgentHook subclass
             hook_class = None
             for member_name, obj in inspect.getmembers(module):
                 if (isinstance(obj, type) and
-                    issubclass(obj, ClaudeCodeHook) and
-                    obj != ClaudeCodeHook):
+                    issubclass(obj, CodeAgentHook) and
+                    obj not in (CodeAgentHook, ClaudeCodeHook, CodexHook) and
+                    not inspect.isabstract(obj)):
                     hook_class = obj
                     break
 
             if hook_class is None:
                 return RegistryEntry(
                     name=name, path=py_file, hook_type="unknown",
-                    hook_class=None, error="No ClaudeCodeHook subclass found"
+                    hook_class=None, error="No CodeAgentHook subclass found"
                 )
 
             # Get hook type (normalize to lowercase)
             hook_type_value = hook_class.hook_type
-            if isinstance(hook_type_value, HookType):
-                hook_type_str = hook_type_value.value.lower()
-            elif isinstance(hook_type_value, str):
-                hook_type_str = hook_type_value.lower()
-            else:
-                hook_type_str = "unknown"
+            hook_type_str = hook_type_key(hook_type_value) if hook_type_value else "unknown"
 
             return RegistryEntry(
                 name=name,
@@ -289,9 +490,9 @@ class HookRegistry:
             hook_type: lowercase hook type ("stop", "pretooluse", etc.)
 
         Returns:
-            List of callable hooks (ClaudeCodeHook instances or ScriptHookAdapters)
+            List of callable hooks (CodeAgentHook instances or ScriptHookAdapters)
         """
-        hook_type_lower = hook_type.lower()
+        hook_type_lower = hook_type_key(hook_type)
         matching = []
 
         # Class-based hooks from registry
@@ -358,7 +559,7 @@ class HookRegistry:
         if not script_path.exists():
             return {"success": False, "error": f"Script not found: {path}"}
 
-        hook_type_lower = hook_type.lower()
+        hook_type_lower = hook_type_key(hook_type)
         adapter = ScriptHookAdapter(name, hook_type_lower, script_path)
         self._scripts[name] = adapter
 
