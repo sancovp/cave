@@ -22,6 +22,7 @@ def make_aios_root(tmp_path):
         "silas_aios/registries/term_nucleus.md",
         "silas_aios/registries/surface_registry.md",
         "silas_aios/search/skilltree.md",
+        "silas_aios/adapters/codex_skilltree_adapter.md",
         "silas_aios/selector/policy.md",
         "silas_aios/ledgers/context_ledger.md",
         "silas_aios/ledgers/budget_ledger.md",
@@ -39,6 +40,7 @@ def make_aios_root(tmp_path):
         ".codex/skills/sic-silas-aios/scripts/aios_status.py",
         ".codex/skills/sic-silas-aios/scripts/aios_search.py",
         ".codex/skills/sic-silas-aios/scripts/aios_select.py",
+        ".codex/skills/sic-silas-aios/scripts/aios_skilltree_adapter.py",
     ]
     for rel in required:
         _write(root / rel, f"# {rel}\nAIOS searchable content\n")
@@ -107,6 +109,21 @@ def test_aios_bridge_selects_advisory_dna_sequence(tmp_path):
         "assay",
         "checkpoint",
     ]
+
+
+def test_aios_bridge_checkpoints_after_adapter_view_is_current(tmp_path):
+    root = make_aios_root(tmp_path)
+    view = root / "silas_aios" / "runtime" / "skilltree_codex_view" / ".claude" / "skills"
+    view.mkdir(parents=True)
+    (view / "sic-silas-aios").symlink_to(root / ".codex" / "skills" / "sic-silas-aios", target_is_directory=True)
+    bridge = AIOSBridge(root=root, use_installed_skilltree=False)
+
+    selection = bridge.select_next()
+
+    adapter = next(candidate for candidate in selection["candidates"] if candidate["id"] == "codex_skilltree_adapter")
+    assert adapter["status"] == "completed"
+    assert selection["selected"]["id"] == "human_checkpoint"
+    assert selection["dna_sequence"]["metadata"]["selected_candidate"] == "human_checkpoint"
 
 
 def test_aios_bridge_reports_missing_root(tmp_path):

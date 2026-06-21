@@ -15,6 +15,7 @@ DEFAULT_REQUIRED_PATHS = [
     "silas_aios/registries/term_nucleus.md",
     "silas_aios/registries/surface_registry.md",
     "silas_aios/search/skilltree.md",
+    "silas_aios/adapters/codex_skilltree_adapter.md",
     "silas_aios/selector/policy.md",
     "silas_aios/ledgers/context_ledger.md",
     "silas_aios/ledgers/budget_ledger.md",
@@ -32,6 +33,7 @@ DEFAULT_REQUIRED_PATHS = [
     ".codex/skills/sic-silas-aios/scripts/aios_status.py",
     ".codex/skills/sic-silas-aios/scripts/aios_search.py",
     ".codex/skills/sic-silas-aios/scripts/aios_select.py",
+    ".codex/skills/sic-silas-aios/scripts/aios_skilltree_adapter.py",
 ]
 
 DEFAULT_EXTS = (".md", ".txt", ".mdx", ".rst")
@@ -227,13 +229,14 @@ class AIOSBridge:
         candidates.sort(key=lambda item: (-item["score"], item["id"]))
         selected = next(
             (item for item in candidates if not item.get("requires_approval") and item.get("status") != "completed"),
-            candidates[0] if candidates else self._candidate(
-                "stop_complete",
-                "Stop at checkpoint",
-                "No lawful next candidate was found; remain at human checkpoint.",
+            self._candidate(
+                "human_checkpoint",
+                "Stop at human checkpoint",
+                "All non-approval AIOS moves are complete; ask Isaac before global promotion, live wiring, store migration, or mutating skilltree operations.",
                 0,
                 category="checkpoint",
-                reason="No candidates available.",
+                status="checkpoint",
+                reason="Only completed or approval-bound candidates remain.",
             ),
         )
         return self._selection_payload(root, status, selected, candidates, limit=limit)
@@ -258,20 +261,27 @@ class AIOSBridge:
         mutation_text = self._read(root, "silas_aios/queues/mutation_queue.md")
         promotion_text = self._read(root, "silas_aios/queues/promotion_queue.md")
         selector_exists = (root / "silas_aios" / "runtime" / "selector_decision.json").is_file()
+        adapter_complete = self._codex_skilltree_adapter_complete(root)
 
         candidates = [
             self._candidate(
                 "codex_skilltree_adapter",
                 "Design Codex adapter for skilltree tree/coherence operations",
                 "Design and assay a Codex-safe adapter for skilltree tree/coherence operations without mutating .codex/skills yet.",
-                86,
+                20 if adapter_complete else 86,
                 category="adapter",
+                status="completed" if adapter_complete else "candidate",
                 evidence_files=[
                     "silas_aios/search/skilltree.md",
+                    "silas_aios/adapters/codex_skilltree_adapter.md",
                     "silas_aios/maps/drift_map.md",
                     "silas_aios/queues/mutation_queue.md",
                 ],
-                reason="This is inside the AIOS/CAVE boundary and advances skilltree integration without live mutation.",
+                reason=(
+                    "AIOS-local Codex skilltree view is current."
+                    if adapter_complete
+                    else "This is inside the AIOS/CAVE boundary and advances skilltree integration without live mutation."
+                ),
                 metadata={"boundary": "no mutating skilltree commands without approval"},
             ),
             self._candidate(
@@ -449,6 +459,32 @@ class AIOSBridge:
         if not path.is_file():
             return ""
         return path.read_text(encoding="utf-8", errors="replace")
+
+    def _codex_skilltree_adapter_complete(self, root: Path) -> bool:
+        required = [
+            root / "silas_aios" / "adapters" / "codex_skilltree_adapter.md",
+            root / ".codex" / "skills" / "sic-silas-aios" / "scripts" / "aios_skilltree_adapter.py",
+        ]
+        if any(not path.is_file() for path in required):
+            return False
+
+        skills_root = root / ".codex" / "skills"
+        view_skills = root / "silas_aios" / "runtime" / "skilltree_codex_view" / ".claude" / "skills"
+        if not skills_root.is_dir() or not view_skills.is_dir():
+            return False
+
+        skill_dirs = sorted(
+            path for path in skills_root.iterdir()
+            if path.is_dir() and (path / "SKILL.md").is_file()
+        )
+        if not skill_dirs:
+            return False
+
+        for skill_dir in skill_dirs:
+            link = view_skills / skill_dir.name
+            if not link.is_symlink() or link.resolve() != skill_dir.resolve():
+                return False
+        return True
 
     def _load_skilltree(self) -> Optional[Dict[str, Any]]:
         sources = []
