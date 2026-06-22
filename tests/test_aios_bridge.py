@@ -40,12 +40,15 @@ def make_aios_root(tmp_path):
         "silas_aios/runtime/selector_decision.json",
         "silas_aios/runtime/skilltree_project_map.md",
         "silas_aios/runtime/skilltree_lab/report.md",
+        "silas_aios/runtime/skilltree_coherence_report.md",
         ".codex/skills/sic-silas-aios/SKILL.md",
+        ".codex/skills/sic-skilltree-coherence/SKILL.md",
         ".codex/skills/sic-silas-aios/references/boot-protocol.md",
         ".codex/skills/sic-silas-aios/scripts/aios_status.py",
         ".codex/skills/sic-silas-aios/scripts/aios_search.py",
         ".codex/skills/sic-silas-aios/scripts/aios_skilltree_project.py",
         ".codex/skills/sic-silas-aios/scripts/aios_skilltree_lab.py",
+        ".codex/skills/sic-silas-aios/scripts/aios_skilltree_coherence.py",
         ".codex/skills/sic-silas-aios/scripts/aios_select.py",
         ".codex/skills/sic-silas-aios/scripts/aios_skilltree_adapter.py",
         ".codex/skills/sic-silas-aios/scripts/aios_gate.py",
@@ -67,6 +70,15 @@ def make_aios_root(tmp_path):
         "PromptType: WorkPrompt\nConcreteContext: gene ontology AIOS search\n",
     )
     return root
+
+
+def link_all_project_skills(root):
+    view = root / "silas_aios" / "runtime" / "skilltree_codex_view" / ".claude" / "skills"
+    view.mkdir(parents=True)
+    skills_root = root / ".codex" / "skills"
+    for skill_dir in sorted(path for path in skills_root.iterdir() if path.is_dir()):
+        if (skill_dir / "SKILL.md").is_file():
+            (view / skill_dir.name).symlink_to(skill_dir, target_is_directory=True)
 
 
 def test_discover_aios_root_walks_up_from_child(tmp_path):
@@ -138,9 +150,7 @@ def test_aios_gate_allows_only_selected_non_approval_candidate(tmp_path):
 
 def test_aios_bridge_checkpoints_after_adapter_view_is_current(tmp_path):
     root = make_aios_root(tmp_path)
-    view = root / "silas_aios" / "runtime" / "skilltree_codex_view" / ".claude" / "skills"
-    view.mkdir(parents=True)
-    (view / "sic-silas-aios").symlink_to(root / ".codex" / "skills" / "sic-silas-aios", target_is_directory=True)
+    link_all_project_skills(root)
     bridge = AIOSBridge(root=root, use_installed_skilltree=False)
 
     selection = bridge.select_next()
@@ -153,9 +163,7 @@ def test_aios_bridge_checkpoints_after_adapter_view_is_current(tmp_path):
 
 def test_aios_gate_blocks_checkpoint_and_completed_adapter(tmp_path):
     root = make_aios_root(tmp_path)
-    view = root / "silas_aios" / "runtime" / "skilltree_codex_view" / ".claude" / "skills"
-    view.mkdir(parents=True)
-    (view / "sic-silas-aios").symlink_to(root / ".codex" / "skills" / "sic-silas-aios", target_is_directory=True)
+    link_all_project_skills(root)
     bridge = AIOSBridge(root=root, use_installed_skilltree=False)
 
     checkpoint_gate = bridge.gate()
@@ -225,6 +233,10 @@ def test_http_aios_routes_delegate_to_cave(monkeypatch):
             calls.append(("skilltree_lab", data))
             return {"status": "ok", "command": data.get("command")}
 
+        def aios_skilltree_coherence(self, **data):
+            calls.append(("skilltree_coherence", data))
+            return {"status": "ok", "command": data.get("command"), "gate_decision": "ok"}
+
     monkeypatch.setattr(http_server, "cave", HttpFakeCave())
 
     assert http_server.get_aios_status() == {"status": "ok"}
@@ -234,6 +246,11 @@ def test_http_aios_routes_delegate_to_cave(monkeypatch):
     assert http_server.gate_aios_candidate({"candidate_id": "live_cave_mcp_wiring", "limit": 4}) == {"decision": "checkpoint"}
     assert http_server.run_aios_skilltree_project({"command": "doctor"}) == {"status": "ok", "command": "doctor"}
     assert http_server.run_aios_skilltree_lab({"command": "run"}) == {"status": "ok", "command": "run"}
+    assert http_server.run_aios_skilltree_coherence({"command": "run"}) == {
+        "status": "ok",
+        "command": "run",
+        "gate_decision": "ok",
+    }
     assert calls == [
         ("status", None),
         ("next", None),
@@ -242,4 +259,5 @@ def test_http_aios_routes_delegate_to_cave(monkeypatch):
         ("gate", {"candidate_id": "live_cave_mcp_wiring", "limit": 4}),
         ("skilltree_project", {"command": "doctor", "write_map": False}),
         ("skilltree_lab", {"command": "run"}),
+        ("skilltree_coherence", {"command": "run"}),
     ]

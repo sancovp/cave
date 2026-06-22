@@ -57,3 +57,6 @@ class AIOSMixin:
 
     def aios_skilltree_lab(self, *, command: str = "run") -> Dict[str, Any]:
         return self._get_aios_bridge().skilltree_lab(command=command)
+
+    def aios_skilltree_coherence(self, *, command: str = "run") -> Dict[str, Any]:
+        return self._get_aios_bridge().skilltree_coherence(command=command)

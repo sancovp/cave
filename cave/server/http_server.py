@@ -357,6 +357,13 @@ def run_aios_skilltree_lab(data: Dict[str, Any] | None = None):
     return cave.aios_skilltree_lab(command=data.get("command", "run"))
 
 
+@app.post("/aios/skilltree/coherence")
+def run_aios_skilltree_coherence(data: Dict[str, Any] | None = None):
+    """Run the AIOS project skilltree coherence loop."""
+    data = data or {}
+    return cave.aios_skilltree_coherence(command=data.get("command", "run"))
+
+
 # === DNA (Auto Mode) Endpoints ===
 @app.get("/dna/status")
 def get_dna_status():

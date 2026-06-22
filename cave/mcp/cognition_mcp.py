@@ -189,6 +189,12 @@ def aios_skilltree_lab(command: str = "run") -> dict:
 
 
 @mcp.tool()
+def aios_skilltree_coherence(command: str = "run") -> dict:
+    """Run the AIOS project skilltree coherence loop."""
+    return _post("/aios/skilltree/coherence", {"command": command})
+
+
+@mcp.tool()
 def dna_create_config(
     name: str,
     loop_names: list[str],

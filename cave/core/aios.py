@@ -35,12 +35,15 @@ DEFAULT_REQUIRED_PATHS = [
     "silas_aios/runtime/selector_decision.json",
     "silas_aios/runtime/skilltree_project_map.md",
     "silas_aios/runtime/skilltree_lab/report.md",
+    "silas_aios/runtime/skilltree_coherence_report.md",
     ".codex/skills/sic-silas-aios/SKILL.md",
+    ".codex/skills/sic-skilltree-coherence/SKILL.md",
     ".codex/skills/sic-silas-aios/references/boot-protocol.md",
     ".codex/skills/sic-silas-aios/scripts/aios_status.py",
     ".codex/skills/sic-silas-aios/scripts/aios_search.py",
     ".codex/skills/sic-silas-aios/scripts/aios_skilltree_project.py",
     ".codex/skills/sic-silas-aios/scripts/aios_skilltree_lab.py",
+    ".codex/skills/sic-silas-aios/scripts/aios_skilltree_coherence.py",
     ".codex/skills/sic-silas-aios/scripts/aios_select.py",
     ".codex/skills/sic-silas-aios/scripts/aios_skilltree_adapter.py",
     ".codex/skills/sic-silas-aios/scripts/aios_gate.py",
@@ -327,6 +330,12 @@ class AIOSBridge:
         if command != "run":
             return {"status": "error", "error": f"unknown skilltree lab command: {command}"}
         return self._run_aios_script("aios_skilltree_lab.py", [command], timeout=60)
+
+    def skilltree_coherence(self, *, command: str = "run") -> Dict[str, Any]:
+        """Run the project-local AIOS skilltree coherence loop."""
+        if command != "run":
+            return {"status": "error", "error": f"unknown skilltree coherence command: {command}"}
+        return self._run_aios_script("aios_skilltree_coherence.py", [command], timeout=90)
 
     def _build_candidates(self, root: Path, status: Dict[str, Any]) -> List[Dict[str, Any]]:
         missing = status.get("missing", [])
