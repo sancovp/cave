@@ -6,6 +6,7 @@ import pytest
 
 from cave.core.cave_agent import CAVEAgent
 from cave.core.dna import DNAConfigStore
+from cave.core.loops import AVAILABLE_LOOPS
 from cave.server import http_server
 
 
@@ -56,6 +57,60 @@ def test_dna_config_store_flattens_nested_dna_refs(tmp_path):
         "autopoiesis",
     ]
     assert [loop.name for loop in dna.loops] == ["autopoiesis", "guru", "autopoiesis"]
+
+
+def test_silas_coreflow_loops_are_loadable_and_recursively_composable(tmp_path):
+    expected = [
+        "silas_observe",
+        "silas_select",
+        "silas_execute",
+        "silas_assay",
+        "silas_persist",
+        "silas_publish_preview",
+    ]
+    assert all(name in AVAILABLE_LOOPS for name in expected)
+
+    store = DNAConfigStore(tmp_path)
+    store.create_config(
+        name="silas_core_tick",
+        description="One bounded SILAS run-once-and-learn cycle",
+        loop_names=[
+            "silas_observe",
+            "silas_select",
+            "silas_execute",
+            "silas_assay",
+            "silas_persist",
+        ],
+    )
+    store.create_config(
+        name="silas_attention_tick",
+        description="Core tick plus proof-gated preview publishing",
+        loop_names=["dna:silas_core_tick", "silas_publish_preview"],
+    )
+    store.create_config(
+        name="silas_launch_cycle",
+        description="Larger launch loop assembled from repeated attention ticks",
+        loop_names=["dna:silas_attention_tick", "dna:silas_core_tick"],
+        exit_behavior="cycle",
+        set_current=True,
+    )
+
+    dna = store.build_dna("silas_launch_cycle")
+
+    assert [loop.name for loop in dna.loops] == [
+        "silas_observe",
+        "silas_select",
+        "silas_execute",
+        "silas_assay",
+        "silas_persist",
+        "silas_publish_preview",
+        "silas_observe",
+        "silas_select",
+        "silas_execute",
+        "silas_assay",
+        "silas_persist",
+    ]
+    assert dna.exit_behavior.value == "cycle"
 
 
 def test_dna_config_store_rejects_unknown_loop_names(tmp_path):
