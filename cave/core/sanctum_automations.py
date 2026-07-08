@@ -12,7 +12,7 @@ On sync:
 import json
 import logging
 import os
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -26,11 +26,49 @@ JOURNAL_CONFIG = HEAVEN_DATA / "sanctuary" / "journal_config.json"
 AUTOMATIONS_DIR = HEAVEN_DATA / "automations"
 RITUAL_PREFIX = "sanctum-ritual-"
 REMINDED_STATE_FILE = HEAVEN_DATA / "sanctum_reminded.json"
+SELFTEST_STATE_FILE = HEAVEN_DATA / "sanctum_selftest.json"
+
+# period → journal ritual name (used by the daily selftest to read REMINDED_STATE_FILE)
+_PERIOD_RITUAL = {"morning": "morning-journal", "evening": "night-journal"}
 
 
 def _clock() -> Clock:
     """Get a Clock from journal_config.json. Cheap to create."""
     return Clock.from_config()
+
+
+def _is_fresh_today(path: Path) -> bool:
+    """True iff `path` exists AND its mtime falls on today's date (in the clock's tz).
+
+    FAIL-LOUD discipline: a missing file, or ANY unexpected stat/IO fault, returns
+    False (treated as STALE). The freshness probe itself never crashes the trigger
+    dispatch, but a stale/missing briefing is NEVER silently accepted as fresh — the
+    caller turns False into the loud-failure path. NOTE: existence is NOT freshness;
+    a real-but-ancient briefing (the 44-day "2026-04-27" bug) is correctly stale here.
+    """
+    clock = _clock()
+    try:
+        if not path.exists():
+            return False
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, clock.tz)
+        return mtime.strftime("%Y-%m-%d") == clock.today()
+    except OSError:
+        return False
+
+
+def _briefing_state(path: Path) -> str:
+    """Human-readable reason a briefing is not fresh: 'missing' | 'stale since <ts>' | 'unreadable'.
+
+    Used to name the failure on the ERROR log + the human-facing SYSTEM FAILURE message.
+    """
+    clock = _clock()
+    try:
+        if not path.exists():
+            return "missing"
+        mtime = datetime.fromtimestamp(path.stat().st_mtime, clock.tz)
+        return f"stale since {mtime.strftime('%Y-%m-%d %H:%M')}"
+    except OSError as e:
+        return f"unreadable ({e})"
 
 
 def _get_morning_time() -> str:
@@ -273,6 +311,20 @@ def catch_up_missed_rituals() -> Dict[str, Any]:
         if now >= sched_time and name not in completed_today:
             past_due.append((name, desc, sched_time, ritual))
 
+    # Daily pipeline selftest — runs on the SAME automation schedule as catch-up,
+    # AFTER ritual evaluation, exactly once per period per day (≥30 min past target).
+    # Placed before the early returns so it fires even when nothing was missed.
+    # Journal target = morning_time (h:m); evening uses night_time when available.
+    _maybe_run_daily_selftest("morning", clock, h, m)
+    nh, nm = h, m
+    if JOURNAL_CONFIG.exists():
+        try:
+            _jc = json.loads(JOURNAL_CONFIG.read_text())
+            nh, nm = map(int, _jc.get("night_time", f"{h:02d}:{m:02d}").split(":"))
+        except (json.JSONDecodeError, OSError, ValueError):
+            nh, nm = h, m
+    _maybe_run_daily_selftest("evening", clock, nh, nm)
+
     if not past_due:
         return {"status": "nothing_missed"}
 
@@ -304,19 +356,32 @@ def catch_up_missed_rituals() -> Dict[str, Any]:
                 period = trigger["period"]
                 autocontext_path = HEAVEN_DATA / f"journal_autocontext_{period}.txt"
 
-                # Delete stale placeholder
+                # Delete stale/placeholder briefing so the one-shot contextualizer
+                # re-runs — FAIL LOUD (a stale briefing is a producer failure, never
+                # silently tolerated). Existence is NOT freshness: delete if placeholder
+                # OR not fresh-today, so a real-but-ancient briefing is refreshed.
                 if autocontext_path.exists():
-                    content = autocontext_path.read_text()
-                    if "Late contextualization" in content or len(content) < 300:
-                        autocontext_path.unlink()
+                    file_content = autocontext_path.read_text()
+                    if (not _is_fresh_today(autocontext_path)
+                            or "Late contextualization" in file_content
+                            or len(file_content) < 300):
+                        logger.error(
+                            "SYSTEM FAILURE: %s autocontext briefing is %s (placeholder/stale) — "
+                            "the night-tick contextualize producer did not refresh it; deleting so "
+                            "the one-shot contextualizer re-runs", period, _briefing_state(autocontext_path),
+                        )
+                        try:
+                            autocontext_path.unlink()
+                        except OSError as e:
+                            logger.error("Could not delete stale briefing %s: %s", autocontext_path, e)
 
-                # Try contextualizer once (non-blocking, best-effort)
+                # Try contextualizer once (one-shot late repair — the designed mechanism)
                 if not autocontext_path.exists():
-                    logger.info("Attempting contextualizer for %s (best-effort, one-shot)", name)
+                    logger.info("Attempting contextualizer for %s (one-shot late repair)", name)
                     try:
                         _run_late_contextualization(period, channel_id)
                     except Exception as e:
-                        logger.warning("Contextualizer unavailable for %s: %s — firing journal without context", name, e, exc_info=True)
+                        logger.error("SYSTEM FAILURE: late contextualization for %s failed: %s — firing journal without fresh context", name, e, exc_info=True)
             fire_ritual_notification(
                 ritual_name=name, description=desc,
                 channel_id=channel_id, sanctum_name=sanctum_name,
@@ -369,6 +434,130 @@ def _run_late_contextualization(period: str, channel_id: str) -> None:
     )
     response.raise_for_status()
     logger.info("Late %s contextualization dispatched to night agent: %s", period, response.status_code)
+
+
+def _default_selftest_ping(text: str) -> None:
+    """Production ping for the selftest line — the sanctum Discord channel.
+
+    The module's existing Discord mechanism (UserDiscordChannel to the sanctum
+    channel) is the module-level equivalent of the Ears `_ping_discord` path used by
+    the night-tick. Best-effort, never raises into the selftest.
+    """
+    channel_id = _get_sanctum_channel_id()
+    if not channel_id:
+        return
+    try:
+        from .channel import UserDiscordChannel
+        discord = UserDiscordChannel(channel_id=channel_id)
+        if discord.token and discord.channel_id:
+            discord.deliver({"message": text})
+    except Exception as e:
+        logger.error("Selftest ping failed: %s", e, exc_info=True)
+
+
+def run_ritual_pipeline_selftest(period: str, clock=None, heaven_data=None, ping=None) -> str:
+    """Daily pure-Python (ZERO LLM) self-test of the ritual/journal pipeline.
+
+    Checks, in order:
+      1. GET http://localhost:8080/health == 200 (httpx, 5s timeout) — server up.
+      2. _is_fresh_today(journal_autocontext_{period}.txt) — briefing fresh today.
+      3. The trigger-reminded state file shows today's journal ritual processed
+         (REMINDED_STATE_FILE: date==today AND the period's ritual in `reminded`).
+
+    Builds EXACTLY one line. All pass →
+      "🟢 ritual pipeline green ({period}: briefing fresh {HH:MM}, server up)"
+    else →
+      "🔴 RITUAL PIPELINE FAILURE ({period}): {comma-list of exact failed checks with values}".
+
+    Sends it via `ping` (production default = the sanctum Discord ping; tests pass a
+    list.append). Returns the line. FAIL-LOUD: any failed check is named with its value;
+    nothing is silently swallowed.
+    """
+    clock = clock or _clock()
+    hd = Path(heaven_data) if heaven_data is not None else HEAVEN_DATA
+    ping = ping if ping is not None else _default_selftest_ping
+    today = clock.today()
+
+    failures = []
+
+    # Check 1: server health
+    try:
+        import httpx
+        resp = httpx.get("http://localhost:8080/health", timeout=5)
+        if resp.status_code != 200:
+            failures.append(f"server health http {resp.status_code}")
+    except Exception as e:
+        failures.append(f"server unreachable ({e})")
+
+    # Check 2: briefing freshness today
+    briefing_path = hd / f"journal_autocontext_{period}.txt"
+    briefing_hhmm = ""
+    if _is_fresh_today(briefing_path):
+        try:
+            mtime = datetime.fromtimestamp(briefing_path.stat().st_mtime, clock.tz)
+            briefing_hhmm = mtime.strftime("%H:%M")
+        except OSError:
+            briefing_hhmm = "??:??"
+    else:
+        failures.append(f"briefing {_briefing_state(briefing_path)}")
+
+    # Check 3: today's journal ritual processed (reminded state)
+    reminded_state_file = hd / REMINDED_STATE_FILE.name
+    ritual_name = _PERIOD_RITUAL.get(period, f"{period}-journal")
+    processed = False
+    if reminded_state_file.exists():
+        try:
+            data = json.loads(reminded_state_file.read_text())
+            if data.get("date") == today and ritual_name in data.get("reminded", []):
+                processed = True
+        except (json.JSONDecodeError, OSError):
+            pass
+    if not processed:
+        failures.append(f"ritual {ritual_name} not processed today")
+
+    if not failures:
+        line = f"🟢 ritual pipeline green ({period}: briefing fresh {briefing_hhmm}, server up)"
+    else:
+        line = f"🔴 RITUAL PIPELINE FAILURE ({period}): {', '.join(failures)}"
+
+    try:
+        ping(line)
+    except Exception as e:
+        logger.error("Selftest ping callable raised: %s", e, exc_info=True)
+    return line
+
+
+def _maybe_run_daily_selftest(period: str, clock, h: int, m: int) -> None:
+    """Run the daily selftest EXACTLY once per period per day, ≥30 min past journal target.
+
+    Reads SELFTEST_STATE_FILE (sibling of REMINDED_STATE_FILE, same json shape:
+    {"date": today, "ran": [periods...]}). If now ≥ journal target + 30 min and today's
+    {period} has not been recorded → run the selftest and record it. Idempotent per day.
+    Wired into catch_up_missed_rituals (runs on the automation schedule).
+    """
+    now = clock.now()
+    today = clock.today()
+    target_min = h * 60 + m + 30
+    current_min = now.hour * 60 + now.minute
+    if current_min < target_min:
+        return
+
+    ran = []
+    if SELFTEST_STATE_FILE.exists():
+        try:
+            data = json.loads(SELFTEST_STATE_FILE.read_text())
+            if data.get("date") == today:
+                ran = list(data.get("ran", []))
+        except (json.JSONDecodeError, OSError):
+            pass
+    if period in ran:
+        return
+
+    run_ritual_pipeline_selftest(period, clock=clock)
+
+    ran.append(period)
+    SELFTEST_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SELFTEST_STATE_FILE.write_text(json.dumps({"date": today, "ran": ran}))
 
 
 # ─── Fire ritual notification ───────────────────────────────────────────────
@@ -426,11 +615,128 @@ def fire_ritual_notification(
 
 
 # Ritual name → agent trigger mapping
+# All journal-flow rituals (morning/evening/friendship) hand off to the JOURNAL
+# agent in the JOURNAL channel where the user CAN speak. The night agent only
+# CONTEXTUALIZES ahead of time (its Job B/C heart ticks build the autocontext);
+# the night channel carries only night's own archive output, never a ritual the
+# user is asked to act on. (Fixes the May26 bug: friendship summary landed in the
+# NIGHT channel — "use friendship ritual" — where the user cannot respond.)
 _RITUAL_TRIGGERS = {
     "morning-journal": {"agent": "autobiographer_journal", "mode": "journal_morning", "period": "morning"},
     "night-journal": {"agent": "autobiographer_journal", "mode": "journal_evening", "period": "evening"},
-    "friendship-saturday": {"agent": "autobiographer_night", "job_type": "friendship"},
+    "friendship-saturday": {"agent": "autobiographer_journal", "mode": "friendship", "kind": "friendship"},
 }
+
+
+def build_journal_trigger_content(period, clock, heaven_data, late_runner) -> str:
+    """Build the journal-trigger CONTENT STRING with the freshness gate + FAIL-LOUD discipline.
+
+    PURE module-level builder SHARED by BOTH journal-trigger call sites —
+    sanctum_automations._route_trigger (httpx.post dispatch) AND
+    anatomy._route_sanctum_trigger (UserPromptMessage enqueue dispatch) — so the
+    content logic has ONE implementation and ZERO drift. Only the DISPATCH mechanism
+    differs per call site; the content string is identical.
+
+    Args:
+        period: 'morning' | 'evening'.
+        clock: the World.Clock — supplies today() (+ now() for the late-NOTE branch).
+            EVERY returned branch LEADS with today's date (the date-blindness cure;
+            never a raw datetime.now() date-leak, never a pasted ancient date).
+        heaven_data: the HEAVEN_DATA dir; the briefing path is computed as
+            heaven_data / f"journal_autocontext_{period}.txt".
+        late_runner: zero-arg callable that attempts the one-shot late contextualization
+            (the designed repair, NOT a fallback). When the briefing is not fresh it is
+            invoked ONCE; any exception is captured and surfaced LOUDLY. Production passes
+            `lambda: _run_late_contextualization(period, _get_sanctum_channel_id())`; tests
+            inject a deterministic runner.
+
+    Returns the content string. A stale/missing briefing (existence is NOT freshness —
+    the 44-day "2026-04-27" bug) yields a LOUD 'SYSTEM FAILURE:' message that LEADS the
+    content so the human sees it in the journal flow — NEVER a silent chipper
+    "It's time for my ... journal" fallback (that branch DIES).
+    """
+    today = clock.today()
+    # Weekday APPENDED in parens (LLMs miscompute weekdays from bare dates — the
+    # "Wednesday June 11" slip, 2026-06-11); parenthesized so "Today is {today}"
+    # prefix assertions stay stable.
+    from datetime import datetime as _dt2
+    try:
+        today = f"{today} ({_dt2.strptime(today, '%Y-%m-%d').strftime('%A')})"
+    except ValueError:
+        pass  # unexpected clock format: date alone is still correct
+    autocontext_path = Path(heaven_data) / f"journal_autocontext_{period}.txt"
+
+    if _is_fresh_today(autocontext_path):
+        autocontext = autocontext_path.read_text().strip()
+        return (
+            f"Today is {today} and this is the {period} journal trigger.\n\n"
+            f"Here is the context compiled since the last journal:\n\n"
+            f"{autocontext}\n\n"
+            f"OPEN your first message by STATING today's date ({today}) explicitly — the "
+            f"human must always see what day the journal is for. Then contextually request "
+            f"my {period} journal and work it out with me."
+        )
+
+    # PIPELINE FAILURE — log LOUDLY (ERROR), naming the file, its state, and the
+    # producer that should have written it. Then attempt the one-shot late
+    # contextualization ONCE (the designed repair). Delete the stale cache first so
+    # the repair writes clean.
+    state = _briefing_state(autocontext_path)
+    logger.error(
+        "SYSTEM FAILURE: %s autocontext briefing is %s at %s — the scheduled "
+        "night-tick contextualize producer did not write it; attempting one-shot "
+        "late contextualization (producer=night-tick contextualize job)",
+        period, state, autocontext_path,
+    )
+    if autocontext_path.exists():
+        try:
+            autocontext_path.unlink()
+        except OSError as e:
+            logger.error("Could not delete stale briefing %s: %s", autocontext_path, e)
+
+    late_error = None
+    if late_runner is not None:
+        try:
+            late_runner()
+        except Exception as e:  # repair is best-effort; surfaced loudly below
+            late_error = e
+            logger.error(
+                "SYSTEM FAILURE: late %s contextualization failed: %s", period, e, exc_info=True,
+            )
+
+    if late_error is None and _is_fresh_today(autocontext_path):
+        # Late repair produced a fresh briefing — inject it, but DISCLOSE it ran late.
+        autocontext = autocontext_path.read_text().strip()
+        return (
+            f"Today is {today} and this is the {period} journal trigger.\n\n"
+            f"NOTE: the scheduled contextualizer did not run; this briefing was "
+            f"compiled late at {clock.now().strftime('%H:%M')}.\n\n"
+            f"{autocontext}\n\n"
+            f"OPEN your first message by STATING today's date ({today}) explicitly — the "
+            f"human must always see what day the journal is for. Then contextually request "
+            f"my {period} journal and work it out with me."
+        )
+
+    # Late repair ALSO failed (or was not attempted) — the human MUST see the failure
+    # FIRST, in the journal flow itself, never a normal-looking prompt. The human
+    # message names the failure DATE-FREE (the precise stale mtime is in the ERROR log
+    # above) — embedding the ancient date in the agent's prompt is the very date-leak
+    # that caused this bug.
+    # The human-facing failure names the state {missing | stale since ...} per spec,
+    # but DATE-FREE: the precise stale mtime is in the ERROR log above; embedding the
+    # ancient date in the agent's prompt is the very date-leak that caused this bug
+    # (the 44-day "2026-04-27" fossil). So the missing-case is literal "missing" and
+    # the stale-case says "stale since the last successful compile" — names the
+    # failure, leaks no fossil date.
+    human_state = "missing" if state == "missing" else "stale since the last successful compile (not refreshed today)"
+    reason = (f"failed ({late_error})" if late_error is not None
+              else "did not produce a fresh briefing")
+    return (
+        f"SYSTEM FAILURE: the {period} autocontext briefing is {human_state} and late "
+        f"contextualization {reason}. Today is {today}. Tell Isaac plainly that the "
+        f"contextualizer pipeline failed before doing anything else, then run the "
+        f"{period} journal with him manually."
+    )
 
 
 def _route_trigger(ritual_name: str) -> None:
@@ -444,27 +750,43 @@ def _route_trigger(ritual_name: str) -> None:
         clock = _clock()
         agent_name = trigger.get("agent", "autobiographer")
 
+        # DATE-BLINDNESS CURE: every constructed `content` LEADS with today's date,
+        # ahead of any pasted briefing — so no pasted (possibly stale) briefing can
+        # ever out-date the agent's message (the "Evening Journal — 2026-04-27" bug).
+        today = clock.today()
+
         if "job_type" in trigger:
-            content = f"Run {trigger['job_type']} contextualization"
+            content = (
+                f"Today is {today} and this is the {trigger['job_type']} contextualization trigger. "
+                f"Run {trigger['job_type']} contextualization."
+            )
+        elif trigger.get("kind") == "friendship":
+            # Friendship hands off to the JOURNAL agent in friendship mode. The
+            # Night agent's Job C tick built Friendship_Autocontext_{today} ahead
+            # of time; the journal agent's friendship-mode system prompt reads it
+            # (get_concept) and runs the ritual collaboratively with the user.
+            today_us = today.replace("-", "_")
+            content = (
+                f"Today is {today} and this is the weekly Friendship ritual trigger.\n\n"
+                "It's time for the weekly Friendship ritual (Act 3B — the RETURN). "
+                f"The Night agent prepared Friendship_Autocontext_{today_us}. "
+                "Read it, present both protagonist tracks (what the system did + what "
+                "Isaac did this week), run the TWI compliance check, decide TWI changes "
+                "+ deliverables, and close with friendship_journal()."
+            )
         else:
+            # Journal trigger. The CONTENT STRING (freshness gate + FAIL-LOUD
+            # discipline: existence is NOT freshness; a stale/missing briefing is a
+            # LOUD pipeline failure, never a silent chipper fallback) is built by the
+            # SHARED module-level helper so this HTTP path and anatomy's enqueue path
+            # have ONE implementation, zero drift. Only the DISPATCH below (httpx.post)
+            # differs. The late repair is the one-shot late contextualization (designed
+            # mechanism, NOT a fallback), injected so it is the same in both call sites.
             period = trigger.get("period", "morning")
-            autocontext_path = HEAVEN_DATA / f"journal_autocontext_{period}.txt"
-            if autocontext_path.exists() and len(autocontext_path.read_text()) > 300:
-                autocontext = autocontext_path.read_text().strip()
-                content = (
-                    f"Here is the context compiled from since the last journal:\n\n"
-                    f"{autocontext}\n\n"
-                    f"Contextually request my {period} journal now and work it out with me."
-                )
-            else:
-                today = clock.today().replace("-", "_")
-                period_cap = period.capitalize()
-                content = (
-                    f"It's time for my {period} journal. "
-                    f"Check CartON for Journal_Autocontext_{period_cap}_{today} if it exists. "
-                    f"Then ask me for my {period} journal — walk through the 6 dimensions, "
-                    f"ask how I'm feeling, and use journal_entry() to persist."
-                )
+            content = build_journal_trigger_content(
+                period, clock, HEAVEN_DATA,
+                late_runner=lambda: _run_late_contextualization(period, _get_sanctum_channel_id()),
+            )
 
         try:
             # D1 FIX (investigation #5): carry the ritual's DECLARED mode so the agent

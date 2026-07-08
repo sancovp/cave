@@ -368,12 +368,6 @@ class Ears(Organ):
                 if event.source == "rng":
                     from ..organ_daemon import write_to_injection
                     write_to_injection(event)
-                elif event.source == "sanctum":
-                    from ..discord_config import load_discord_config
-                    sanctum_ch = load_discord_config().get("sanctum_channel_id", "")
-                    self._ping_discord(event.content, channel_id=sanctum_ch)
-                    # Route journal/friendship rituals to autobiographer
-                    self._route_sanctum_trigger(event)
                 else:
                     self._agent_ref.route_message(
                         from_agent=f"world:{event.source}",
@@ -507,84 +501,6 @@ class Ears(Organ):
                 logger.info("Ears: Discord ping (%s): %s", discord.channel_id[:6], content[:60])
         except Exception as e:
             logger.error("Ears: Discord ping failed: %s", e)
-
-    # Sanctum ritual name → agent trigger mapping
-    _RITUAL_TRIGGERS = {
-        "morning-journal": {"agent": "autobiographer_journal", "mode": "journal_morning", "period": "morning"},
-        "night-journal": {"agent": "autobiographer_journal", "mode": "journal_evening", "period": "evening"},
-        "friendship-saturday": {"agent": "autobiographer_night", "job_type": "friendship"},
-    }
-
-    def _route_sanctum_trigger(self, event) -> None:
-        """Route sanctum ritual events to the appropriate agent.
-
-        When a journal/friendship ritual fires, enqueue a trigger message
-        to the autobiographer or night agent so they start processing.
-        """
-        if not self._agent_ref or not hasattr(self._agent_ref, 'cave_agents'):
-            return
-
-        ritual_name = event.metadata.get("ritual_name", "")
-        trigger = self._RITUAL_TRIGGERS.get(ritual_name)
-        if not trigger:
-            return
-
-        agent_name = trigger.get("agent", "autobiographer")
-        agent = self._agent_ref.cave_agents.get(agent_name)
-        if not agent:
-            logger.warning("Ears: sanctum trigger for %s but agent '%s' not found", ritual_name, agent_name)
-            return
-
-        # Build trigger message based on agent type
-        if "job_type" in trigger:
-            # ServiceAgent (night) — enqueue job dispatch
-            from ..agent import UserPromptMessage, IngressType
-            job_msg = UserPromptMessage(
-                content=f"Run {trigger['job_type']} contextualization",
-                ingress=IngressType.SYSTEM,
-                priority=8,
-            )
-            agent.enqueue(job_msg)
-            logger.info("Ears: sanctum trigger %s → %s job_type=%s", ritual_name, agent_name, trigger["job_type"])
-        else:
-            # ChatAgent (journal) — inject autocontext as prompt
-            from ..agent import UserPromptMessage, IngressType
-            from datetime import datetime as _dt
-            mode = trigger.get('mode', 'journal')
-            period = trigger.get('period', 'morning')
-            today = _dt.now().strftime("%Y_%m_%d")
-            period_cap = period.capitalize()
-
-            # Try to load night agent's compiled autocontext
-            autocontext = ""
-            autocontext_path = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / f"journal_autocontext_{period}.txt"
-            if autocontext_path.exists():
-                try:
-                    autocontext = autocontext_path.read_text().strip()
-                except Exception:
-                    pass
-
-            if autocontext:
-                content = (
-                    f"Here is the context compiled from since the last journal:\n\n"
-                    f"{autocontext}\n\n"
-                    f"Contextually request my {period} journal now and work it out with me."
-                )
-            else:
-                content = (
-                    f"It's time for my {period} journal. "
-                    f"Check CartON for Journal_Autocontext_{period_cap}_{today} if it exists. "
-                    f"Then ask me for my {period} journal — walk through the 6 dimensions, "
-                    f"ask how I'm feeling, and use journal_entry() to persist."
-                )
-
-            inbox_msg = UserPromptMessage(
-                content=content,
-                ingress=IngressType.SYSTEM,
-                priority=8,
-            )
-            agent.enqueue(inbox_msg)
-            logger.info("Ears: sanctum trigger %s → %s mode=%s period=%s", ritual_name, agent_name, mode, period)
 
     async def poll_loop(self):
         """Async poll loop — inbox + world perception.

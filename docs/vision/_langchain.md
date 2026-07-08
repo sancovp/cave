@@ -1,0 +1,4 @@
+# vision: cave-harness-base (topic — auto-created by `journal`)
+
+<!-- ===VISION DELTA: id-tagged appends below = the gap (`vision diff <m>`); `doc-mirror-commit --realizes <ids>` drops them on build === -->
+- [v1]  2026-06-08T22:19:23  FINDING: Build fix: pip strict resolver REJECTS frozen.full.txt because the proven jobworld-cave:latest pins are internally inconsistent — langchain==1.3.1 declares langchain-core>=1.4.0 yet the proven image actually runs langchain-core==0.3.86 (verified: pip show in jobworld-cave shows both). frozen.full.txt is a COMPLETE pip-freeze closure (all 95 third-party lines are exact == pins), so installing third-party deps with --no-deps plants the exact proven versions and reproduces the environment precisely, instead of letting the resolver reject the proven reality. Changed Dockerfile: pip install --no-cache-dir --no-deps -r requirements-base.txt.  tags:[cave-harness-base, docker, pip, langchain]

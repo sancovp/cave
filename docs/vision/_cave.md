@@ -1,0 +1,4 @@
+# vision: blog_organ_nightly (topic — auto-created by `journal`)
+
+<!-- ===VISION DELTA: id-tagged appends below = the gap (`vision diff <m>`); `doc-mirror-commit --realizes <ids>` drops them on build === -->
+- [v1]  2026-06-10T18:55:51  INTENT: INTENT: build V1 of the nightly WakingDreamer blog organ (Isaac dispatch). V1 shape: a cave CronAutomation (schedule '0 2 * * *') whose code_pointer fire_blog_organ() queries carton for Blog_Request property-nodes with {status:pending} via query_concepts_by_properties; if found, dispatch a minimax-m3 agent carrying the proven narrative-blog-from-aios prompt with specifics from node properties; on success write rendered markdown + flip node to {status:done,output_path,completed_at}; on failure flip to {status:failed,error}. Canonical module: application/cave/cave/core/publishing/blog_organ_nightly.py. Doing mandatory reading first.  tags:[blog_organ_nightly, cave, wakingdreamer, minimax]

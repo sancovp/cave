@@ -24,15 +24,22 @@ classifiers = [
 ]
 
 dependencies = [
-    "pydantic==2.10.6",
+    "pydantic>=2.10.6,<3",
     "fastapi==0.136.1",
     "uvicorn==0.46.0",
     "httpx==0.28.1",
+    "sanctuary-dna>=0.3.5",
+    # llegos is VENDORED into cave/_llegos (LGPL-3.0); these are ITS runtime deps:
+    "beartype",
+    "deepmerge",
+    "svix-ksuid==0.7.0",
+    "networkx",
+    "pydash",
+    "pyee",
+    "sorcery",
 ]
 
 [project.optional-dependencies]
-sdna = ["sanctuary-dna>=0.1.0"]
-llegos = ["llegos==0.1.0"]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21.0",

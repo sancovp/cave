@@ -45,6 +45,8 @@ from .core.hooks import (
     HookResult,
     HookRegistry,
     RegistryEntry,
+    AntigravityHook,
+    AntigravityEnvelopeAdapter,
 )
 
 __version__ = "0.1.0"
@@ -84,4 +86,7 @@ __all__ = [
     "HookResult",
     "HookRegistry",
     "RegistryEntry",
+    "AntigravityHook",
+    "AntigravityEnvelopeAdapter",
 ]
+

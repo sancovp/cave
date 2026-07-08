@@ -12,13 +12,15 @@ from typing import Any, Callable, Dict, List, Optional
 
 
 class HookType(str, Enum):
-    """Claude Code hook types."""
+    """Claude Code and Antigravity hook types."""
     PRE_TOOL_USE = "PreToolUse"
     POST_TOOL_USE = "PostToolUse"
     USER_PROMPT_SUBMIT = "UserPromptSubmit"
     NOTIFICATION = "Notification"
     STOP = "Stop"
     SUBAGENT_SPAWN = "SubagentSpawn"
+    PRE_INVOCATION = "PreInvocation"
+    POST_INVOCATION = "PostInvocation"
 
 
 class HookDecision(str, Enum):
@@ -84,6 +86,77 @@ class ClaudeCodeHook(ABC):
         """Make hook callable, returns dict for HTTP response."""
         result = self.handle(payload, state)
         return result.to_dict()
+
+
+class AntigravityHook(ClaudeCodeHook, ABC):
+    """Base class for hooks designed for Google Antigravity.
+
+    Subclasses should override handle() to process Antigravity payloads.
+    """
+    pass
+
+
+class AntigravityEnvelopeAdapter:
+    """Translates hook input and output envelopes between CAVE (Claude Code) and Antigravity formats."""
+
+    @staticmethod
+    def normalize_input(hook_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize Antigravity payload to CAVE's expected Claude Code schema.
+
+        Maps camelCase structures or toolName keys to snake_case.
+        """
+        hook_type_lower = hook_type.lower()
+        normalized = payload.copy()
+
+        # Tool mapping
+        if "toolName" in payload:
+            normalized["tool_name"] = payload.get("toolName")
+        if "toolInput" in payload and "tool_input" not in payload:
+            normalized["tool_input"] = payload.get("toolInput")
+        elif "input" in payload and "tool_input" not in payload:
+            normalized["tool_input"] = payload.get("input")
+        if "toolCallId" in payload:
+            normalized["tool_call_id"] = payload.get("toolCallId")
+
+        # Result mapping
+        if "toolResult" in payload and "tool_result" not in payload:
+            normalized["tool_result"] = payload.get("toolResult")
+        elif "content" in payload and "tool_result" not in payload:
+            normalized["tool_result"] = payload.get("content")
+
+        # Prompt/text mapping
+        if "text" in payload and "user_input" not in payload:
+            normalized["user_input"] = payload.get("text")
+        elif "prompt" in payload and "user_input" not in payload:
+            normalized["user_input"] = payload.get("prompt")
+
+        return normalized
+
+    @staticmethod
+    def normalize_output(cave_response: Dict[str, Any]) -> Dict[str, Any]:
+        """Translate CAVE decision response to Antigravity's stdout JSON format.
+
+        Maps CAVE {"result": "continue"|"block"} to Antigravity {"decision": "allow"|"deny"}.
+        """
+        result = cave_response.get("result", "continue")
+        decision = "allow" if result == "continue" else "deny"
+
+        antigravity_response = {
+            "decision": decision
+        }
+
+        # Transfer reason if present
+        if "reason" in cave_response:
+            antigravity_response["reason"] = cave_response["reason"]
+        elif "error" in cave_response:
+            antigravity_response["reason"] = cave_response["error"]
+
+        # Transfer additional context (e.g. prompt injection)
+        if "additionalContext" in cave_response:
+            antigravity_response["additionalContext"] = cave_response["additionalContext"]
+
+        return antigravity_response
+
 
 
 # =============================================================================

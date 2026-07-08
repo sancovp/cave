@@ -55,11 +55,15 @@ class HookRouterMixin:
             Response dict with at minimum {"result": "continue"|"block"}
             Can include "additionalContext" to inject into Claude
         """
-        # Detect OpenClaw source and normalize payload format
+        # Detect OpenClaw / Antigravity source and normalize payload format
         source = payload.pop("source", "claude_code")
         if source == "openclaw":
             payload = self._normalize_openclaw_payload(hook_type, payload)
             self._hook_state["current_source"] = "openclaw"
+        elif source == "antigravity":
+            from ..hooks import AntigravityEnvelopeAdapter
+            payload = AntigravityEnvelopeAdapter.normalize_input(hook_type, payload)
+            self._hook_state["current_source"] = "antigravity"
         else:
             self._hook_state["current_source"] = "claude_code"
 
@@ -70,7 +74,11 @@ class HookRouterMixin:
         active_hook_names = self.config.main_agent_config.active_hooks.get(hook_type_lower, [])
 
         if not active_hook_names:
-            return {"result": "continue", "hook_type": hook_type, "active_hooks": []}
+            res = {"result": "continue", "hook_type": hook_type, "active_hooks": []}
+            if source == "antigravity":
+                from ..hooks import AntigravityEnvelopeAdapter
+                return AntigravityEnvelopeAdapter.normalize_output(res)
+            return res
 
         event = {
             "hook_type": hook_type,
@@ -107,11 +115,15 @@ class HookRouterMixin:
 
                 # Check for block signal
                 if result.get("decision") == "block":
-                    return {
+                    res = {
                         "result": "block",
                         "reason": result.get("reason", "Hook blocked"),
                         "additionalContext": "\n".join(additional_context) if additional_context else None,
                     }
+                    if self.get_current_source() == "antigravity":
+                        from ..hooks import AntigravityEnvelopeAdapter
+                        return AntigravityEnvelopeAdapter.normalize_output(res)
+                    return res
             except Exception as e:
                 logger.error(f"Hook {hook.name} failed: {e}")
                 continue
@@ -129,6 +141,10 @@ class HookRouterMixin:
 
         if additional_context:
             response["additionalContext"] = "\n".join(additional_context)
+
+        if self.get_current_source() == "antigravity":
+            from ..hooks import AntigravityEnvelopeAdapter
+            return AntigravityEnvelopeAdapter.normalize_output(response)
 
         return response
 

@@ -1,0 +1,11 @@
+{
+  "name": "blog_organ_nightly",
+  "description": "Nightly blog organ — query CartON for pending Blog_Request nodes; if one exists, dispatch the narrative-blog-from-aios agent to write it, then flip the node to done/failed. The graph detects there is a blog to write and writes it.",
+  "schedule": "0 2 * * *",
+  "code_pointer": "cave.core.publishing.blog_organ_nightly.fire_blog_organ",
+  "code_args": {},
+  "one_shot": false,
+  "priority": 4,
+  "tags": ["publishing", "blog", "organ", "wakingdreamer"],
+  "enabled": true
+}

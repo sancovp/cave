@@ -173,9 +173,8 @@ import os
 
 from pydantic import Field, PrivateAttr
 
-# Import llegos Actor model (LGPL-3.0)
-# pip install -e /tmp/sanctuary-system/llegos
-from llegos import Actor, Message, Object
+# llegos Actor model (LGPL-3.0) — VENDORED into cave/_llegos (ships with cave-harness, no external install).
+from cave._llegos import Actor, Message, Object
 from enum import Enum
 
 from .inbox import Inbox, InboxConfig
