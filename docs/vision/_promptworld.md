@@ -1,0 +1,4 @@
+# vision: cave-harness-base (topic — auto-created by `journal`)
+
+<!-- ===VISION DELTA: id-tagged appends below = the gap (`vision diff <m>`); `doc-mirror-commit --realizes <ids>` drops them on build === -->
+- [v1]  2026-06-08T22:17:46  INTENT: Building cave-harness-base:latest — neutral CAVE-server runtime base extracted from proven jobworld-cave:latest (python3.11-slim + node20 + claude-code@2.1.144 + ceo user + 95 pinned third-party deps from frozen.full.txt + 5 our-source pkgs --no-deps: heaven-framework/sdna/cave/cave-teams/llegos). NEUTRAL: CMD bash, no jobworld entrypoint, no 8501 serve. Artifacts: Dockerfile + build.sh + requirements-base.txt under application/cave/cave/docker/cave-harness-base/. Build running, then E2E verify imports/versions/no-jobworld.  tags:[cave-harness-base, docker, promptworld]
