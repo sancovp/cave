@@ -397,7 +397,12 @@ def fire_blog_organ(**kwargs) -> dict:
 
     logger.info("Blog organ: dispatching heaven minimax agent for %s -> %s", concept_name, output_path)
     t0 = time.time()
-    ok, agent_err, model = _run_agent(prompt)
+    # 80 tool calls, env-overridable: the 3-POV task (read sources + three
+    # draft->write->run->confirm passes) exhausted the old default of 40 —
+    # a run died at exactly 40 with the third post unwritten (2026-07-12).
+    ok, agent_err, model = _run_agent(
+        prompt,
+        max_tool_calls=int(os.environ.get("BLOG_ORGAN_MAX_TOOL_CALLS", "80")))
 
     # Verify the deliverable is FRESH (the agent claims success; we check the
     # artifact was written by THIS dispatch — bare existence passes on a stale
