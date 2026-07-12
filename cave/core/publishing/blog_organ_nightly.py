@@ -51,10 +51,12 @@ HEAVEN_DATA_DIR. Heaven additionally reads whatever the minimax provider needs
 (resolved internally by heaven-framework, same as the WD agents).
 """
 
-import asyncio
 import json
 import logging
+import multiprocessing
 import os
+import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -208,22 +210,73 @@ def _build_prompt(props):
     )
 
 
-def _run_agent(prompt, max_tool_calls=40):
+# Healthy organ runs complete in 5-25 minutes; 45 minutes is unambiguous hang
+# territory (a live 2026-07-12 dispatch sat 85+ minutes and would have sat
+# forever, wedging the tick worker).
+DEFAULT_DISPATCH_TIMEOUT_S = int(
+    os.environ.get("BLOG_ORGAN_DISPATCH_TIMEOUT_S", "2700"))
+
+
+def _dispatch_child(config_kwargs, prompt, max_tool_calls, result_path):
+    """Child-process body: run the heaven dispatch, write the outcome JSON.
+
+    Module-level (picklable for the spawn context). Heavy imports happen HERE.
+    Writes {"ok": bool, "error": str} to result_path; a missing result file
+    means the child died before finishing — the parent reports that loudly.
+    """
+    import asyncio
+
+    out = {"ok": False, "error": "child died before writing a result"}
+    try:
+        from heaven_base.baseheavenagent import BaseHeavenAgent, HeavenAgentConfig
+        from heaven_base.unified_chat import UnifiedChat
+        from heaven_base.tools import BashTool
+        from heaven_base.docs.examples.heaven_callbacks import BackgroundEventCapture
+
+        # Provider defaults to anthropic (minimax speaks the anthropic API via
+        # anthropic_api_url) — same as the WD night/journal agents.
+        config = HeavenAgentConfig(tools=[BashTool], **config_kwargs)
+
+        async def _dispatch():
+            agent = BaseHeavenAgent(
+                config=config,
+                unified_chat=UnifiedChat(),
+                max_tool_calls=max_tool_calls,
+            )
+            capture = BackgroundEventCapture()
+            return await agent.run(prompt=prompt, heaven_main_callback=capture)
+
+        asyncio.run(_dispatch())
+        out = {"ok": True, "error": ""}
+    except Exception as e:  # heaven dispatch failure — capture literally, do NOT fall back
+        import traceback
+        out = {"ok": False,
+               "error": f"heaven minimax dispatch failed: {e}\n"
+                        + traceback.format_exc()}
+    Path(result_path).write_text(json.dumps(out))
+
+
+def _run_agent(prompt, max_tool_calls=40, timeout_s=None, _child_target=None):
     """Dispatch the blog-organ agent on HEAVEN/MINIMAX. Agent reads/writes files itself.
 
     SAME proven pattern as the WakingDreamer service agents
     (sanctuary_revolution.agents.night_agent / journal_agent): build a
     ``HeavenAgentConfig`` (minimax model + ``anthropic_api_url`` from
-    ``journal_agent_config.json``), equip ``BashTool`` so the agent can write +
-    run the JourneyCore fill script and read the journey source itself, then
-    ``await agent.run(prompt)``. Heaven resolves the provider key internally — no
-    provider creds are constructed here.
+    ``journal_agent_config.json``), equip ``BashTool``, run the prompt. Heaven
+    resolves the provider key internally — no provider creds constructed here.
 
-    Sync-callable (a cron code_pointer) so it wraps the async dispatch with
-    ``asyncio.run``.
+    WALL-CLOCK TIMEOUT (2026-07-12): the dispatch runs in a spawned CHILD
+    PROCESS killed after ``timeout_s`` (default DEFAULT_DISPATCH_TIMEOUT_S).
+    The live hang that forced this wedged a blocking unix-socket read ON the
+    event-loop thread — no in-process timeout (asyncio/signal) can fire for
+    that class; only an out-of-process kill can. On timeout the organ fails
+    LOUD (the node flips failed). ``_child_target`` is a test seam.
+
+    Sync-callable (a cron code_pointer).
 
     Returns (ok: bool, error: str, model: str). error is "" on success.
     """
+    timeout_s = DEFAULT_DISPATCH_TIMEOUT_S if timeout_s is None else timeout_s
     cfg = _minimax_model_config()
     model = cfg.get("model", "")
     api_url = cfg.get("extra_model_kwargs", {}).get("anthropic_api_url", "")
@@ -233,22 +286,9 @@ def _run_agent(prompt, max_tool_calls=40):
                 f"(model={model!r}, anthropic_api_url={api_url!r})",
                 model)
 
-    try:
-        from heaven_base.baseheavenagent import BaseHeavenAgent, HeavenAgentConfig
-        from heaven_base.unified_chat import UnifiedChat
-        from heaven_base.tools import BashTool
-        from heaven_base.docs.examples.heaven_callbacks import BackgroundEventCapture
-    except ImportError as e:
-        logger.error("heaven-framework not importable: %s", e)
-        return False, f"heaven-framework not importable: {e}", model
-
-    # Provider defaults to anthropic (minimax speaks the anthropic API via anthropic_api_url) —
-    # same as the WD night/journal agents, which do NOT set provider. The config file may
-    # override with a lowercase enum value ('anthropic'/'openai'/...).
-    config = HeavenAgentConfig(
+    config_kwargs = dict(
         name="blog_organ",
         system_prompt="",  # the whole instruction is the prompt (the blog-organ prompt body)
-        tools=[BashTool],   # Bash gives the agent file read/write + python-exec (the fill script)
         model=model,
         use_uni_api=cfg.get("use_uni_api", False),
         max_tokens=cfg.get("max_tokens", 8000),
@@ -256,21 +296,50 @@ def _run_agent(prompt, max_tool_calls=40):
         **({"provider": cfg["provider"]} if cfg.get("provider") else {}),
     )
 
-    async def _dispatch():
-        agent = BaseHeavenAgent(
-            config=config,
-            unified_chat=UnifiedChat(),
-            max_tool_calls=max_tool_calls,
-        )
-        capture = BackgroundEventCapture()
-        return await agent.run(prompt=prompt, heaven_main_callback=capture)
-
+    fd, result_path = tempfile.mkstemp(prefix="blog_organ_dispatch_", suffix=".json")
+    os.close(fd)
+    os.unlink(result_path)  # the child writing it back IS the success signal
+    ctx = multiprocessing.get_context("spawn")  # clean interpreter, fork-safe
+    proc = ctx.Process(target=_child_target or _dispatch_child,
+                       args=(config_kwargs, prompt, max_tool_calls, result_path))
     try:
-        asyncio.run(_dispatch())
-        return True, "", model
-    except Exception as e:  # heaven dispatch failure — capture literally, do NOT fall back
-        logger.error("Blog agent (heaven minimax) failed: %s", e, exc_info=True)
-        return False, f"heaven minimax dispatch failed: {e}", model
+        proc.start()
+        proc.join(timeout_s)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join(5)
+            if proc.is_alive():
+                proc.kill()
+                proc.join(5)
+            logger.error("Blog agent dispatch exceeded %ss wall-clock — KILLED",
+                         timeout_s)
+            return (False,
+                    f"dispatch exceeded wall-clock timeout {timeout_s}s and was "
+                    "KILLED (the 2026-07-12 hang class: a blocking IPC read "
+                    "wedged on the event-loop thread — only an out-of-process "
+                    "kill can catch it)", model)
+        result_file = Path(result_path)
+        if not result_file.exists():
+            return (False,
+                    f"dispatch child exited (code {proc.exitcode}) without "
+                    "writing a result — child crashed", model)
+        out = json.loads(result_file.read_text())
+        if not out.get("ok"):
+            logger.error("Blog agent (heaven minimax) failed: %s", out.get("error"))
+        return bool(out.get("ok")), str(out.get("error", "")), model
+    finally:
+        Path(result_path).unlink(missing_ok=True)
+
+
+def _artifact_fresh(path, t0):
+    """True iff ``path`` exists AND was written at/after dispatch start ``t0``.
+
+    Existence alone is the ok-report-no-artifact trap (caught live 2026-07-12:
+    a halted run 'succeeded' against a STALE artifact from a prior run) —
+    only a write newer than the dispatch counts as the deliverable.
+    """
+    p = Path(path)
+    return p.exists() and p.stat().st_mtime >= t0
 
 
 def _flip_failed(set_props, graph, concept_name, err):
@@ -322,11 +391,16 @@ def fire_blog_organ(**kwargs) -> dict:
         return _flip_failed(set_props, graph, concept_name, f"prompt build failed: {e}")
 
     logger.info("Blog organ: dispatching heaven minimax agent for %s -> %s", concept_name, output_path)
+    t0 = time.time()
     ok, agent_err, model = _run_agent(prompt)
 
-    # Verify the deliverable exists (the agent claims success; we check the artifact).
-    if not (ok and Path(output_path).exists()):
-        err = agent_err if agent_err else f"agent reported ok but {output_path} not written"
+    # Verify the deliverable is FRESH (the agent claims success; we check the
+    # artifact was written by THIS dispatch — bare existence passes on a stale
+    # file from a prior run, the ok-report-no-artifact trap).
+    if not (ok and _artifact_fresh(output_path, t0)):
+        err = agent_err if agent_err else (
+            f"agent reported ok but {output_path} was not freshly written "
+            "(missing, or mtime predates this dispatch)")
         return _flip_failed(set_props, graph, concept_name, err)
 
     # Success — flip to done. Record the minimax model the agent actually ran on.

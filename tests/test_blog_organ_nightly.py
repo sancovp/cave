@@ -83,13 +83,13 @@ class TestHeavenDispatchSeam:
     """The dispatch seam now runs the agent on heaven/minimax and returns (ok, err, model)."""
 
     def test_success_flips_done_with_model(self):
-        """A successful heaven dispatch + written artifact flips the node to done with model set."""
+        """A successful heaven dispatch + FRESH artifact flips the node to done with model set."""
         carton, set_props, _ = _stub_carton_one_pending(_FULL_PROPS)
         with patch.object(B, "_carton", return_value=carton), \
              patch.object(B, "_read_props", return_value=dict(_FULL_PROPS)), \
              patch.object(B, "_build_prompt", return_value="PROMPT"), \
              patch.object(B, "_run_agent", return_value=(True, "", "MiniMax-M2.7-highspeed")), \
-             patch.object(B.Path, "exists", return_value=True):
+             patch.object(B, "_artifact_fresh", return_value=True):
             result = B.fire_blog_organ()
 
         assert result["status"] == "done"
@@ -98,6 +98,21 @@ class TestHeavenDispatchSeam:
         assert flip["status"] == "done"
         assert flip["model"] == "MiniMax-M2.7-highspeed"
         assert "model_todo" not in flip
+
+    def test_stale_artifact_flips_failed(self):
+        """ok-report + STALE artifact = the ok-report-no-artifact trap (live
+        2026-07-12: a halted run 'succeeded' against the prior run's file) —
+        the node must flip failed, never done."""
+        carton, set_props, _ = _stub_carton_one_pending(_FULL_PROPS)
+        with patch.object(B, "_carton", return_value=carton), \
+             patch.object(B, "_read_props", return_value=dict(_FULL_PROPS)), \
+             patch.object(B, "_build_prompt", return_value="PROMPT"), \
+             patch.object(B, "_run_agent", return_value=(True, "", "MiniMax-M2.7-highspeed")), \
+             patch.object(B, "_artifact_fresh", return_value=False):
+            result = B.fire_blog_organ()
+
+        assert result["status"] == "failed"
+        assert "not freshly written" in result["error"]
 
     def test_missing_minimax_config_flips_failed_no_fallback(self):
         """If the minimax model config is absent, _run_agent gates -> node flips failed (no claude -p fallback)."""
@@ -112,3 +127,56 @@ class TestHeavenDispatchSeam:
         assert "minimax model config" in result["error"]
         flip = set_props.call_args[0][1]
         assert flip["status"] == "failed"
+
+
+# ── dispatch wall-clock timeout (the 2026-07-12 hang class) ──────────────────
+# Stand-in child bodies at MODULE level: the spawn context pickles the target
+# by reference, so the child re-imports this test module to find them.
+
+def _child_sleeper(config_kwargs, prompt, max_tool_calls, result_path):
+    import time as _t
+    _t.sleep(120)  # simulates the wedged-IPC hang: never returns in time
+
+
+def _child_ok(config_kwargs, prompt, max_tool_calls, result_path):
+    import json as _json
+    from pathlib import Path as _P
+    _P(result_path).write_text(_json.dumps({"ok": True, "error": ""}))
+
+
+_MINIMAX_CFG = {"model": "fake-model",
+                "extra_model_kwargs": {"anthropic_api_url": "https://fake.local"}}
+
+
+class TestDispatchTimeout:
+    """_run_agent must NEVER hang forever: the live 2026-07-12 hang wedged a
+    blocking IPC read ON the event-loop thread, so only the out-of-process
+    kill (child process + parent deadline) can catch the class."""
+
+    def test_wall_clock_timeout_kills_hung_child(self):
+        import time
+        t0 = time.time()
+        with patch.object(B, "_minimax_model_config", return_value=_MINIMAX_CFG):
+            ok, err, model = B._run_agent("x", timeout_s=3,
+                                          _child_target=_child_sleeper)
+        assert not ok
+        assert "wall-clock timeout" in err and "KILLED" in err
+        assert model == "fake-model"
+        assert time.time() - t0 < 60  # killed at the deadline, not after 120s
+
+    def test_child_result_roundtrip(self):
+        with patch.object(B, "_minimax_model_config", return_value=_MINIMAX_CFG):
+            ok, err, model = B._run_agent("x", timeout_s=30,
+                                          _child_target=_child_ok)
+        assert ok and err == "" and model == "fake-model"
+
+
+class TestArtifactFresh:
+    def test_fresh_stale_and_missing(self, tmp_path):
+        import time
+        f = tmp_path / "a.md"
+        f.write_text("x")
+        now = time.time()
+        assert B._artifact_fresh(str(f), now - 5)          # written after t0
+        assert not B._artifact_fresh(str(f), now + 5)      # stale vs t0
+        assert not B._artifact_fresh(str(tmp_path / "missing.md"), 0)
