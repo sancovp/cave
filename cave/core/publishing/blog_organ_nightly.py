@@ -291,7 +291,12 @@ def _run_agent(prompt, max_tool_calls=40, timeout_s=None, _child_target=None):
         system_prompt="",  # the whole instruction is the prompt (the blog-organ prompt body)
         model=model,
         use_uni_api=cfg.get("use_uni_api", False),
-        max_tokens=cfg.get("max_tokens", 8000),
+        # The blog organ gets its OWN token budget (BLOG_ORGAN_MAX_TOKENS,
+        # default 16000) instead of the shared WD config's 8000: a 3-POV run
+        # died live (2026-07-12) with its entire 8000 burned inside one
+        # thinking pass — the final message was thinking-only, no tool call,
+        # zero writes. The shared journal_agent_config stays untouched.
+        max_tokens=int(os.environ.get("BLOG_ORGAN_MAX_TOKENS", "16000")),
         extra_model_kwargs={"anthropic_api_url": api_url},
         **({"provider": cfg["provider"]} if cfg.get("provider") else {}),
     )
