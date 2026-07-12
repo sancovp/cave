@@ -278,7 +278,10 @@ def _run_agent(prompt, max_tool_calls=40, timeout_s=None, _child_target=None):
     """
     timeout_s = DEFAULT_DISPATCH_TIMEOUT_S if timeout_s is None else timeout_s
     cfg = _minimax_model_config()
-    model = cfg.get("model", "")
+    # BLOG_ORGAN_MODEL overrides the shared WD config's model for THIS organ
+    # (Isaac 2026-07-12: "call m3" — content quality wants the big model; the
+    # WD journal agents keep their own config untouched).
+    model = os.environ.get("BLOG_ORGAN_MODEL") or cfg.get("model", "")
     api_url = cfg.get("extra_model_kwargs", {}).get("anthropic_api_url", "")
     if not (model and api_url):
         return (False,
