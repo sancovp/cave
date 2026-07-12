@@ -625,6 +625,12 @@ _RITUAL_TRIGGERS = {
     "morning-journal": {"agent": "autobiographer_journal", "mode": "journal_morning", "period": "morning"},
     "night-journal": {"agent": "autobiographer_journal", "mode": "journal_evening", "period": "evening"},
     "friendship-saturday": {"agent": "autobiographer_journal", "mode": "friendship", "kind": "friendship"},
+    # Autobiography-saturday: the LIFE-narrative weekly roll-up (parallel to friendship's
+    # system/TWI review). Same JOURNAL-channel handoff pattern as friendship so the user CAN
+    # respond; the journal agent's autobiography mode compiles the week into the timeline.
+    # (Fixes the dangling cron: autobiography-saturday was LIVE but absent here, so it fired a
+    # Discord notification routed to NO agent.)
+    "autobiography-saturday": {"agent": "autobiographer_journal", "mode": "autobiography", "kind": "autobiography"},
 }
 
 
@@ -773,6 +779,19 @@ def _route_trigger(ritual_name: str) -> None:
                 "Read it, present both protagonist tracks (what the system did + what "
                 "Isaac did this week), run the TWI compliance check, decide TWI changes "
                 "+ deliverables, and close with friendship_journal()."
+            )
+        elif trigger.get("kind") == "autobiography":
+            # Autobiography roll-up hands off to the JOURNAL agent in autobiography mode (same
+            # JOURNAL-channel pattern as friendship — where the user CAN respond). The agent
+            # reads the week from the User_Autobiography_Timeline and compiles the week's
+            # namthar (life story), persisting it with deposit_memory().
+            content = (
+                f"Today is {today} and this is the weekly Autobiography roll-up trigger.\n\n"
+                "It's time for the weekly autobiography roll-up (the LIFE narrative, parallel to "
+                "the Friendship ritual's system review). Read this week's memories, journals, and "
+                "rituals from the User_Autobiography_Timeline, compile the week into a short namthar "
+                "(life-story) narrative, and persist it with deposit_memory() as a Week_Rollup memory. "
+                "Then share the week's story with me."
             )
         else:
             # Journal trigger. The CONTENT STRING (freshness gate + FAIL-LOUD
