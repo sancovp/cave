@@ -239,7 +239,7 @@ class Calendar(Compiler):
     def list_scheduled(self) -> List[Dict[str, Any]]:
         """List all scheduled automations."""
         result = []
-        for name, auto in self._registry.automations.items():
+        for name, auto in list(self._registry.automations.items()):
             entry = {
                 "name": name,
                 "type": type(auto).__name__,
@@ -266,7 +266,7 @@ class Calendar(Compiler):
         end = now + timedelta(days=days)
         events = []
 
-        for name, auto in self._registry.automations.items():
+        for name, auto in list(self._registry.automations.items()):
             if not auto.schema.enabled or not auto.schedule:
                 continue
             try:

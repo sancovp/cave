@@ -8,6 +8,7 @@ Writes heartbeat message to Conductor's file inbox, respecting:
 - dedup (clear stale heartbeat files)
 """
 import json
+import os
 import logging
 import time
 from datetime import datetime
@@ -15,14 +16,15 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-INBOX_DIR = Path("/tmp/heaven_data/inboxes/conductor")
+_HD = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data"))
+INBOX_DIR = _HD / "inboxes" / "conductor"
 # CONNECTS_TO: /tmp/heaven_data/conductor_ops/heartbeat/pending.json (write) — conductor heartbeat queue
-PENDING_FILE = Path("/tmp/heaven_data/conductor_ops/heartbeat/pending.json")
+PENDING_FILE = _HD / "conductor_ops" / "heartbeat" / "pending.json"
 # CONNECTS_TO: /tmp/heaven_data/conductor_heartbeat_config.json (read/write) — conductor heartbeat config
-CONFIG_PATH = Path("/tmp/heaven_data/conductor_heartbeat_config.json")
-PROCESSING_FLAG = Path("/tmp/heaven_data/conductor_processing.flag")
+CONFIG_PATH = _HD / "conductor_heartbeat_config.json"
+PROCESSING_FLAG = _HD / "conductor_processing.flag"
 # CONNECTS_TO: /tmp/heaven_data/conductor_ops/heartbeat/last_user_message.txt (read/write)
-LAST_USER_MSG = Path("/tmp/heaven_data/conductor_ops/heartbeat/last_user_message.txt")
+LAST_USER_MSG = _HD / "conductor_ops" / "heartbeat" / "last_user_message.txt"
 
 
 def conductor_heartbeat_fire(**kwargs) -> dict:

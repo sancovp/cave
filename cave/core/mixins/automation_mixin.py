@@ -72,6 +72,20 @@ class AutomationMixin:
             return {"error": f"Automation '{name}' not found"}
         return auto.fire(extra_vars)
 
+    def fire_event(self, event_name: str, payload: Optional[dict] = None) -> List[Dict[str, Any]]:
+        """Emit an event on this agent's bus: every EventAutomation registered for it fires, with the payload as the
+        prompt's variables and as `extra_args` to the code pointer. Returns one result per automation fired."""
+        results = []
+        for auto in self.automation_registry.get_by_event(event_name):
+            if not auto.schema.enabled:
+                continue
+            try:
+                results.append(auto.fire(extra_vars=payload or {}, extra_args={"event": payload or {}}))
+            except Exception as e:
+                logger.error("Event automation %s failed on %s: %s", auto.name, event_name, e)
+                results.append({"name": auto.name, "status": "error", "error": str(e)})
+        return results
+
     def fire_all_due(self) -> List[Dict[str, Any]]:
         """Fire all automations that are due. Called by Heart on rhythm."""
         results = []
@@ -97,6 +111,6 @@ class AutomationMixin:
                     "code_pointer": auto.schema.code_pointer,
                     "has_prompt": bool(auto.schema.prompt_template),
                 }
-                for name, auto in self.automation_registry.automations.items()
+                for name, auto in list(self.automation_registry.automations.items())
             },
         }

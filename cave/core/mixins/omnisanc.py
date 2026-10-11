@@ -6,6 +6,7 @@ Provides CAVEAgent access to:
 3. Metabrainhook prompt file (injected content)
 """
 import json
+import os
 import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -13,13 +14,13 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 # File paths
-OMNISANC_STATE_FILE = Path("/tmp/heaven_data/omnisanc_core/.course_state")
+OMNISANC_STATE_FILE = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "omnisanc_core" / ".course_state"
 # TRIGGERS: OMNISANC disable via file write to .omnisanc_disabled
-OMNISANC_DISABLED_FILE = Path("/tmp/heaven_data/omnisanc_core/.omnisanc_disabled")
+OMNISANC_DISABLED_FILE = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "omnisanc_core" / ".omnisanc_disabled"
 # CONNECTS_TO: /tmp/metabrainhook_state.txt (read/write) — also accessed by OMNISANC daemon
 METABRAINHOOK_STATE_FILE = Path("/tmp/metabrainhook_state.txt")
 # CONNECTS_TO: /tmp/heaven_data/metabrainhook_config.json (read/write) — metabrainhook prompt config
-METABRAINHOOK_PROMPT_FILE = Path("/tmp/heaven_data/metabrainhook_config.json")
+METABRAINHOOK_PROMPT_FILE = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "metabrainhook_config.json"
 
 
 class OmnisancMixin:

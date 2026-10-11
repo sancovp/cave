@@ -1,9 +1,10 @@
 """CAVE Configuration.
 
 Pydantic configuration model for CAVEAgent runtime.
-Persists to /tmp/heaven_data/cave_agent_config.json
+Persists to $HEAVEN_DATA_DIR/cave_agent_config.json (heaven's default dir is /tmp/heaven_data; an app that seats
+its own data dir, as OnionMorph does, gets its config there).
 """
-# CONNECTS_TO: /tmp/heaven_data/cave_agent_config.json (read/write) — CAVE runtime config
+# CONNECTS_TO: $HEAVEN_DATA_DIR/cave_agent_config.json (read/write) — CAVE runtime config
 import json
 from pathlib import Path
 import os
@@ -25,7 +26,7 @@ class CAVEConfig(BaseModel):
     port: int = 8080
 
     # === Paths ===
-    data_dir: Path = Field(default_factory=lambda: Path("/tmp/heaven_data"))
+    data_dir: Path = Field(default_factory=lambda: Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")))
     hook_dir: Path = Field(default_factory=lambda: Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "cave_hooks")
     claude_home: Path = Field(default_factory=Path.home)  # Where .claude/ lives (e.g., /home/GOD)
 

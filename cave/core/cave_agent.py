@@ -58,8 +58,9 @@ Unified CAVE runtime state. HTTP routes are in server/http_server.py.
 #
 # =============================================================================
 """
-import subprocess
 import logging
+import os
+import subprocess
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -457,13 +458,13 @@ class CAVEAgent(
         elif ch_type == "inbox":
             from pathlib import Path
             channel = AgentInboxChannel(
-                inbox_dir=Path(config.get("inbox_dir", "/tmp/heaven_data/inbox")),
+                inbox_dir=Path(config.get("inbox_dir") or Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "inbox"),
             )
         elif ch_type == "internal":
             from pathlib import Path
             agent_name = config.get("agent_name", "unknown")
             channel = AgentInboxChannel(
-                inbox_dir=Path(f"/tmp/heaven_data/inboxes/{agent_name}"),
+                inbox_dir=Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "inboxes" / agent_name,
             )
         elif ch_type == "sse":
             if hasattr(self, 'event_queue'):
@@ -991,7 +992,7 @@ class CAVEAgent(
         """
         from pathlib import Path
         # CONNECTS_TO: /tmp/heaven_data/paia_mode.txt (read) — also accessed by set_paia_mode(), OMNISANC
-        mode_file = Path("/tmp/heaven_data/paia_mode.txt")
+        mode_file = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "paia_mode.txt"
         try:
             if mode_file.exists():
                 return mode_file.read_text().strip().upper()
@@ -1007,7 +1008,7 @@ class CAVEAgent(
         """
         from pathlib import Path
         # CONNECTS_TO: /tmp/heaven_data/paia_auto.txt (read) — also accessed by set_auto_mode(), OMNISANC
-        auto_file = Path("/tmp/heaven_data/paia_auto.txt")
+        auto_file = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "paia_auto.txt"
         try:
             if auto_file.exists():
                 return auto_file.read_text().strip().upper()
@@ -1019,7 +1020,7 @@ class CAVEAgent(
         """Set auto mode: AUTO or MANUAL."""
         from pathlib import Path
         # CONNECTS_TO: /tmp/heaven_data/paia_auto.txt (write) — also accessed by get_auto_mode(), OMNISANC
-        auto_file = Path("/tmp/heaven_data/paia_auto.txt")
+        auto_file = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "paia_auto.txt"
         mode = mode.upper()
         if mode not in ("AUTO", "MANUAL"):
             return {"success": False, "error": f"Invalid mode: {mode}"}
@@ -1031,7 +1032,7 @@ class CAVEAgent(
         """Set PAIA mode: DAY or NIGHT."""
         from pathlib import Path
         # CONNECTS_TO: /tmp/heaven_data/paia_mode.txt (write) — also accessed by get_paia_mode(), OMNISANC
-        mode_file = Path("/tmp/heaven_data/paia_mode.txt")
+        mode_file = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "paia_mode.txt"
         mode = mode.upper()
         if mode not in ("DAY", "NIGHT"):
             return {"success": False, "error": f"Invalid mode: {mode}"}

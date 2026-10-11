@@ -717,7 +717,7 @@ class ChatAgent(Agent):
         """Append heartbeat event to heartbeat_log.md."""
         import json as _json
         # CONNECTS_TO: /tmp/heaven_data/heartbeat_log.md (write)
-        log_path = Path("/tmp/heaven_data/heartbeat_log.md")
+        log_path = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "heartbeat_log.md"
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         timestamp = datetime.now().isoformat()

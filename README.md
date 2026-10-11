@@ -6,6 +6,8 @@
 
 ⭐ 1 stars • 🕑 Updated 2026-08-09
 
+[Marketplace](https://github.com/sancovp/sancrev-marketplace) • [Docs](https://sancovp.github.io/aisaac/)
+
 📦 Auto-published from the monorepo • [CHANGELOG](./CHANGELOG.md) • [sancovp/cave](https://github.com/sancovp/cave)
 
 <!-- SCALABLE-PUBLISHING:AUTOGEN END -->

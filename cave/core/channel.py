@@ -347,7 +347,7 @@ class AgentChannel(Channel):
 @dataclass
 class AgentInboxChannel(AgentChannel):
     """File-based inbox conversation. Each message is a JSON file."""
-    inbox_dir: Path = field(default_factory=lambda: Path("/tmp/heaven_data/inbox"))
+    inbox_dir: Path = field(default_factory=lambda: Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "inbox")
 
     def channel_type(self) -> str:
         return "agent.inbox"

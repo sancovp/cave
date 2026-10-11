@@ -46,6 +46,7 @@ Architecture:
 import json
 import importlib
 import logging
+import os
 from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -72,6 +73,7 @@ class AutomationSchema:
     name: str
     description: str = ""
     schedule: Optional[str] = None  # Cron expression (trigger)
+    event_name: Optional[str] = None  # An event on the agent's bus (trigger) — an EventAutomation, persisted like any other
 
     # Execution options (at least one required)
     prompt_template: Optional[str] = None  # Prompt string (rendered with template_vars)
@@ -122,6 +124,7 @@ class AutomationSchema:
             "name": self.name,
             "description": self.description,
             "schedule": self.schedule,
+            "event_name": self.event_name,
             "prompt_template": self.prompt_template,
             "code_pointer": self.code_pointer,
             "code_args": self.code_args,
@@ -249,20 +252,25 @@ class InputAutomation(Link):
         # Execute code_pointer if present
         if self.schema.code_pointer:
             func = self.get_code_callable()
-            if func:
-                try:
-                    args = {**self.schema.code_args}
-                    args.update(ctx.get("extra_args", {}))
-                    code_result = func(**args)
-                    result_data["code_result"] = code_result
-                    ctx["code_result"] = code_result
-                except Exception as e:
-                    logger.exception(f"Code execution failed for {self.name}: {e}")
-                    return LinkResult(
-                        status=LinkStatus.ERROR,
-                        context=ctx,
-                        error=f"Code execution failed: {e}",
-                    )
+            if func is None:
+                return LinkResult(
+                    status=LinkStatus.ERROR,
+                    context=ctx,
+                    error=f"Code pointer {self.schema.code_pointer} could not be imported",
+                )
+            try:
+                args = {**self.schema.code_args}
+                args.update(ctx.get("extra_args", {}))
+                code_result = func(**args)
+                result_data["code_result"] = code_result
+                ctx["code_result"] = code_result
+            except Exception as e:
+                logger.exception(f"Code execution failed for {self.name}: {e}")
+                return LinkResult(
+                    status=LinkStatus.ERROR,
+                    context=ctx,
+                    error=f"Code execution failed: {e}",
+                )
 
         # Render prompt if present
         prompt = self.render_prompt(ctx.get("extra_vars"))
@@ -345,10 +353,17 @@ class InputAutomation(Link):
                 except Exception as e:
                     logger.error(f"Callback delivery failed: {e}")
 
-    def fire(self, extra_vars: Optional[dict] = None) -> dict:
-        """Synchronous fire for backwards compatibility with AutomationMixin."""
+    def fire(self, extra_vars: Optional[dict] = None, extra_args: Optional[dict] = None) -> dict:
+        """Synchronous fire for backwards compatibility with AutomationMixin.
+
+        extra_vars render into the prompt template; extra_args are passed to the code pointer beside code_args —
+        how an event's payload reaches the process that answers it."""
         import asyncio
-        ctx = {"extra_vars": extra_vars} if extra_vars else {}
+        ctx = {}
+        if extra_vars:
+            ctx["extra_vars"] = extra_vars
+        if extra_args:
+            ctx["extra_args"] = extra_args
 
         try:
             loop = asyncio.get_event_loop()
@@ -404,7 +419,11 @@ class EventAutomation(InputAutomation):
 
     def __init__(self, event_name: str = "", **kwargs):
         super().__init__(**kwargs)
-        self.event_name = event_name
+        self.event_name = event_name or (self.schema.event_name or "")
+
+    def is_due(self) -> bool:
+        """An event automation is never due on the clock — it fires when its event is emitted (fire_event)."""
+        return False
 
     def matches_event(self, event: str) -> bool:
         """Check if this automation should fire for given event."""
@@ -472,6 +491,8 @@ class Automation:
         # Determine trigger type from schema
         if schema.schedule:
             return CronAutomation(schema=schema)
+        elif schema.event_name:
+            return EventAutomation(event_name=schema.event_name, schema=schema)
         else:
             return ManualAutomation(schema=schema)
 
@@ -601,7 +622,7 @@ class DeliveryRouter:
     def _deliver_log(self, result: Any) -> dict:
         """Append to automation log."""
         # CONNECTS_TO: /tmp/heaven_data/automation_log.jsonl (write)
-        log_path = Path("/tmp/heaven_data/automation_log.jsonl")
+        log_path = Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "automation_log.jsonl"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         from datetime import datetime
         entry = {"timestamp": datetime.now().isoformat(), "result": result}
@@ -630,7 +651,7 @@ class AutomationRegistry:
     def __init__(self, automations_dir: Optional[Path] = None):
         self.automations: dict[str, InputAutomation] = {}
         # TRIGGERS: CronAutomation hot-reload via file write to /tmp/heaven_data/automations/
-        self._dir = automations_dir or Path("/tmp/heaven_data/automations")
+        self._dir = automations_dir or Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "automations"
         self._dir.mkdir(parents=True, exist_ok=True)
 
     def load_all(self):
@@ -678,7 +699,11 @@ class AutomationRegistry:
                 existing = self.automations[name]
                 if (existing.schema.enabled != schema.enabled or
                     existing.schema.schedule != schema.schedule or
+                    existing.schema.event_name != schema.event_name or
                     existing.schema.code_pointer != schema.code_pointer or
+                    existing.schema.code_args != schema.code_args or
+                    existing.schema.description != schema.description or
+                    list(existing.schema.tags or []) != list(schema.tags or []) or
                     existing.schema.prompt_template != schema.prompt_template):
                     try:
                         auto = Automation.create(schema=schema)
@@ -688,9 +713,9 @@ class AutomationRegistry:
                     except Exception as e:
                         logger.error("Hot-reload: failed to update %s: %s", name, e)
 
-        # Remove deleted
+        # Remove deleted — a file that is still there but did not parse (read mid-write) keeps its entry
         for name in list(self.automations.keys()):
-            if name not in on_disk:
+            if name not in on_disk and not (self._dir / f"{name}.json").exists():
                 del self.automations[name]
                 removed.append(name)
                 logger.info("Hot-reload: removed %s", name)
@@ -707,8 +732,11 @@ class AutomationRegistry:
         return False
 
     def save_schema(self, schema: AutomationSchema) -> Path:
+        # written whole or not at all: hot_reload never sees a half-written file
         path = self._dir / f"{schema.name}.json"
-        path.write_text(json.dumps(schema.to_dict(), indent=2))
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(json.dumps(schema.to_dict(), indent=2))
+        os.replace(tmp, path)
         return path
 
     def list_all(self) -> list[str]:
@@ -716,18 +744,19 @@ class AutomationRegistry:
 
     def get_due(self) -> list[InputAutomation]:
         """Get all CronAutomations that are due to fire."""
-        return [auto for auto in self.automations.values() if auto.is_due()]
+        # a snapshot: the calendar can add or cancel an entry from another thread while the heart reads this
+        return [auto for auto in list(self.automations.values()) if auto.is_due()]
 
     def get_by_event(self, event_name: str) -> list[EventAutomation]:
         """Get all EventAutomations matching an event."""
         return [
-            auto for auto in self.automations.values()
+            auto for auto in list(self.automations.values())
             if isinstance(auto, EventAutomation) and auto.matches_event(event_name)
         ]
 
     def get_webhook(self, path: str) -> Optional[WebhookAutomation]:
         """Get WebhookAutomation by path."""
-        for auto in self.automations.values():
+        for auto in list(self.automations.values()):
             if isinstance(auto, WebhookAutomation) and auto.webhook_path == path:
                 return auto
         return None

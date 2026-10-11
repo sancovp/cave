@@ -697,12 +697,13 @@ class AnatomyMixin:
         import time as _time
         from pathlib import Path as _Path
 
-        LOCK_PATH = _Path("/tmp/heaven_data/heartbeat_user_active.lock")
+        _HD = _Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data"))
+        LOCK_PATH = _HD / "heartbeat_user_active.lock"
         LOCK_STALE = 300  # 5 minutes
         # CONNECTS_TO: /tmp/heaven_data/heartbeat_config.json (read/write) — heartbeat daemon config
-        CONFIG_PATH = _Path("/tmp/heaven_data/heartbeat_config.json")
+        CONFIG_PATH = _HD / "heartbeat_config.json"
         # CONNECTS_TO: /tmp/heaven_data/heartbeat_log.jsonl (write) — heartbeat event log
-        LOG_PATH = _Path("/tmp/heaven_data/heartbeat_log.jsonl")
+        LOG_PATH = _HD / "heartbeat_log.jsonl"
 
         def _log(action, details=None):
             entry = {"ts": datetime.utcnow().isoformat(), "action": action, **(details or {})}
@@ -770,14 +771,15 @@ class AnatomyMixin:
         from pathlib import Path as _Path
         from datetime import datetime as _dt
 
-        INBOX_DIR = _Path("/tmp/heaven_data/inboxes/conductor")
+        _HD = _Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data"))
+        INBOX_DIR = _HD / "inboxes" / "conductor"
         # CONNECTS_TO: /tmp/heaven_data/conductor_ops/heartbeat/pending.json (write) — conductor heartbeat queue
-        PENDING_FILE = _Path("/tmp/heaven_data/conductor_ops/heartbeat/pending.json")
+        PENDING_FILE = _HD / "conductor_ops" / "heartbeat" / "pending.json"
         # CONNECTS_TO: /tmp/heaven_data/conductor_heartbeat_config.json (read/write) — conductor heartbeat config
-        CONFIG_PATH = _Path("/tmp/heaven_data/conductor_heartbeat_config.json")
-        PROCESSING_FLAG = _Path("/tmp/heaven_data/conductor_processing.flag")
+        CONFIG_PATH = _HD / "conductor_heartbeat_config.json"
+        PROCESSING_FLAG = _HD / "conductor_processing.flag"
         # CONNECTS_TO: /tmp/heaven_data/conductor_ops/heartbeat/last_user_message.txt (read/write)
-        LAST_USER_MSG = _Path("/tmp/heaven_data/conductor_ops/heartbeat/last_user_message.txt")
+        LAST_USER_MSG = _HD / "conductor_ops" / "heartbeat" / "last_user_message.txt"
 
         def _conductor_heartbeat_tick():
             # Check enabled flag from config

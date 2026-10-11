@@ -14,7 +14,9 @@ Set use_claude=True for tasks that specifically need Claude.
 
 from typing import Any, Dict, Optional
 from dataclasses import dataclass, field
+from pathlib import Path
 import logging
+import os
 import traceback
 
 logger = logging.getLogger(__name__)
