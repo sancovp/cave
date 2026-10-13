@@ -89,6 +89,9 @@ class ParseSpecLink(Link):
         try:
             from croniter import croniter
             croniter(spec["schedule"])
+        except ImportError:
+            return LinkResult(status=LinkStatus.ERROR, context=ctx,
+                            error="croniter is not installed on this machine: no cron schedule can be read")
         except (ValueError, KeyError) as e:
             return LinkResult(status=LinkStatus.ERROR, context=ctx,
                             error=f"Invalid cron schedule '{spec.get('schedule')}': {e}")
