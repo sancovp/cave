@@ -189,7 +189,7 @@ class CAVEAgent(
 
 ## The Philosophy
 
-**If you're doing work that's NOT on the schedule... WTF are you doing?**
+**If you're doing work that's NOT on the schedule... what are you doing?**
 
 The system isn't a tool you USE.
 The system IS how you work.

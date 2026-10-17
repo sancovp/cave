@@ -6,7 +6,7 @@
 
 ---
 
-## Round 1: Isaac's Words (verbatim)
+## Round 1: Isaac's Words (his terms)
 
 ### From earlier in session (organ daemon confusion):
 
@@ -14,7 +14,7 @@
 - The conductor is an organ.
 - It is part of brain (supposed to be).
 - So of course the organ DAEMON has to be able to CALL THEM.
-- organ_daemon doesn't poll world, it doesn't fucking do that.
+- organ_daemon doesn't poll world, it doesn't do that.
 - **WORLD** is just a container for events that come from outside.
 - **CHANNELS** need to be **IN WORLD**.
 - WORLD -> BODY. That is it.
@@ -170,13 +170,13 @@ How do the Buddhist layers (Body/Speech/Mind = parallel) and the Jungian process
 
 ---
 
-## Round 8: Isaac's Words (verbatim)
+## Round 8: Isaac's Words (his terms)
 
 ### On resolving the map:
 - Ego can be mapped to Speech, that's fine.
 - We don't have to have Ego mapped to Body because Body is the only thing Psychology knows about BSM tripartite view.
 - We have to resolve the map.
-- Is that the solution or does that just open up more bullshit for us?
+- Is that the solution or does that just open up more problems for us?
 
 ## Round 8: GNOSYS Assessment
 
@@ -189,7 +189,7 @@ If Ego = Speech, then checking the rest:
 
 This DOES resolve the Map A vs Map B contradiction — Jungian processes map ACROSS trikaya layers, not nested inside Body. Psychology just called the whole thing "Body" because it didn't have the trikaya distinction.
 
-**Potential new bullshit:** Where does Shadow go? And does this mean Organs (heartbeat, polling, hooks, daemons) are genuinely Body-layer, while Psyche processes distribute across Speech and Mind? That would mean the Feb 27 equation "Psyche + Organs = Body" is WRONG — it should be "Organs = Body, Psyche distributes across Speech + Mind."
+**Potential new problems:** Where does Shadow go? And does this mean Organs (heartbeat, polling, hooks, daemons) are genuinely Body-layer, while Psyche processes distribute across Speech and Mind? That would mean the Feb 27 equation "Psyche + Organs = Body" is WRONG — it should be "Organs = Body, Psyche distributes across Speech + Mind."
 
 ---
 

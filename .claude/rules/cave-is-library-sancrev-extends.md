@@ -2,7 +2,7 @@
 
 ## The Problem
 
-Agent tried to put sancrev-specific routes (GEAR, PAIAB, SANCTUM, messaging, conductor, automations, persona, agent registry) INTO CAVEHTTPServer. Isaac: "why the fuck would CAVEHTTPSERVER **EVER** HAVE SANCREV PARTS? FUCK YOU."
+Agent tried to put sancrev-specific routes (GEAR, PAIAB, SANCTUM, messaging, conductor, automations, persona, agent registry) INTO CAVEHTTPServer. Isaac ruled that CAVEHTTPServer must **NEVER** have sancrev parts.
 
 ## The Rule
 

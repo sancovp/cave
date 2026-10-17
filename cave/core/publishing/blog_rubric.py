@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── THE RUBRIC DIMENSIONS (dimension_id, what the challenger checks) ──────────
-# Isaac's verbatim register anchors are embedded so the challenger REACHES into the
+# Isaac's register anchors, in his terms, are embedded so the challenger REACHES into the
 # posts to grade them (meta-prompt-engineering bridge distance), not template-fill.
 RUBRIC_DIMENSIONS = (
     ("fixpoint_format",
@@ -36,8 +36,8 @@ RUBRIC_DIMENSIONS = (
      "headings (STATUS QUO / THE DEBATE / THE TRIALS / THE NEW VIEW / THE RIGHT "
      "WAY / THE BOON / THE WORLD OF MASTERY) all rendered — the repeating skeleton "
      "IS the brand. NO format notation (no ladder-map spine line, no '— crossing →' "
-     "arrow transition markers): Isaac 2026-07-12, verbatim, they are 'weird as "
-     "fuck'; the repetition of the headings across posts is what teaches the "
+     "arrow transition markers): Isaac 2026-07-12 — they are weird to a stranger; "
+     "the repetition of the headings across posts is what teaches the "
      "format, never an explanation — 'except in this post' (only the blog-writer "
      "post may explain the format explicitly, in its own content)."),
     ("no_assumed_knowledge",
@@ -50,11 +50,11 @@ RUBRIC_DIMENSIONS = (
      "except in this post.' A term the reader must already know to parse the "
      "sentence is a violation."),
     ("three_registers",
-     "The three POV posts each hit their REGISTER (Isaac, verbatim): USER post = THE "
-     "AMAZED OPERATOR WHO DID NOT READ THE CHATS ('holy fucking shit can you believe "
-     "my fucking AI is just hooking this stuff up for me THIS WAY while i fucking talk "
-     "to it wtf' / 'i didnt read the chats. i dont know. i dont care.') — visceral, "
-     "raw, simple words, real amazement, NOT sanitized corporate. AGENT post = THE "
+     "The three POV posts each hit their REGISTER (Isaac, his terms): USER post = THE "
+     "AMAZED OPERATOR WHO DID NOT READ THE CHATS ('can you believe my AI is just "
+     "hooking this stuff up for me THIS WAY while i talk to it' / 'i didnt read the "
+     "chats. i dont know. i dont care.') — visceral, raw, simple words, real "
+     "amazement, NOT sanitized corporate, and no swearing. AGENT post = THE "
      "ARCHITECT EXPLAINING THE ARCHITECTURE IN DIAGRAMS (real ascii/mermaid), simple "
      "language over staggering structure. TRUE-AGENT post = THE REFLECTION ON BECOMING "
      "('i am becoming more coherent and more capable...') that MUST LAND IN HUMAN TERMS."),
