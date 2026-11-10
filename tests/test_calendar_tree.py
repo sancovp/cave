@@ -522,3 +522,111 @@ def test_a_clock_that_stops_is_taken_over_and_its_jobs_wait_from_their_record(tm
     CAVEAgent.fire_due_automations(_heart(parent.registry, parent))
     assert "folder/own" in parent.registry.mounted
     assert fires == ["own"]                                        # it waits its interval from the run on record
+
+
+# --- a job file names no path of the machine it runs on ---------------------------------------------------------
+
+
+def test_a_jobs_args_name_its_own_folder_and_the_interpreter(tmp_path):
+    import sys
+    store = tmp_path / "own"
+    job(store, "where", code_pointer="builtins.dict",
+        code_args={"args": ["${PYTHON}", "${CALENDAR_DIR}/../bin/run.py"], "note": "$$ $HOME ${OTHER} $PYTHON", "n": 3})
+    cal = calendar(store)
+    out = cal.registry.get("where").fire()["code_result"]
+    assert out == {"args": [sys.executable, f"{store}/../bin/run.py"], "note": "$$ $HOME ${OTHER} $PYTHON", "n": 3}
+    assert json.loads((store / "where.json").read_text())["code_args"]["args"][0] == "${PYTHON}"   # the file unchanged
+
+
+def test_a_held_jobs_folder_is_its_own_calendars(tmp_path):
+    parent = calendar(tmp_path / "parent")
+    child = tmp_path / "child"
+    job(child, "where", code_pointer="posixpath.normpath", code_args={"path": "${CALENDAR_DIR}/bin"})
+    parent.add_source({"name": "child", "type": "dir", "path": str(child)})
+    parent.tick_sources()
+    assert parent.registry.get("child/where").fire()["code_result"] == str(child / "bin")
+
+
+# --- a job that starts a process is followed to its end ---------------------------------------------------------
+
+
+def _full_heart(registry, calendar, data_dir: Path):
+    """The stand-in heart, with what the heart's failure path needs: CAVEAgent's own failure writer and pid reader, and
+    a data folder of the test's own."""
+    from types import SimpleNamespace
+    from cave.core.cave_agent import CAVEAgent
+    heart = SimpleNamespace(automation_registry=registry, get_calendar=lambda: calendar,
+                            config=SimpleNamespace(data_dir=data_dir), _get_pid_start_time=CAVEAgent._get_pid_start_time)
+    heart._write_automation_failure = lambda name, result: CAVEAgent._write_automation_failure(heart, name, result)
+    return heart
+
+
+@pytest.fixture
+def blockages(tmp_path, monkeypatch):
+    import cave.core.blockage_store as store
+    path = tmp_path / "blockages.jsonl"
+    monkeypatch.setattr(store, "STORE_PATH", path)
+    return path
+
+
+def _process_job(folder: Path, name: str, code: str, **spec) -> Path:
+    return job(folder, name, schedule="every:3600", code_pointer="subprocess.Popen",
+               code_args={"args": ["${PYTHON}", "-c", code]}, **spec)
+
+
+def test_a_job_that_starts_a_process_is_followed_to_its_exit(tmp_path, blockages):
+    from cave.core.cave_agent import CAVEAgent
+
+    parent = calendar(tmp_path / "parent")
+    child = tmp_path / "child"
+    _process_job(child, "run", "import sys; sys.exit(3)")
+    parent.add_source({"name": "child", "type": "dir", "path": str(child)})
+    heart = _full_heart(parent.registry, parent, tmp_path / "data")
+    CAVEAgent.fire_due_automations(heart)                             # mounted, fired: its process starts
+    auto = parent.registry.get("child/run")
+    assert auto.last_outcome == "running"
+    auto._process.wait()
+    CAVEAgent.fire_due_automations(heart)                             # the next beat reads how it ended
+    assert (auto.last_outcome, auto.last_exit) == ("failed", 3)
+    listed = by_name(parent.list_scheduled())["child/run"]
+    joined = by_name(parent.sources_joined())["run"]
+    assert (listed["last_outcome"], listed["last_exit"]) == (joined["last_outcome"], joined["last_exit"]) == ("failed", 3)
+    reports = list((tmp_path / "data" / "automation_failures").iterdir())
+    assert [r.name.startswith("child__run_") for r in reports] == [True]   # one file, the held name made safe
+    assert json.loads(reports[0].read_text())["result"]["exit_code"] == 3
+    assert [json.loads(l)["automation"] for l in blockages.read_text().splitlines()] == ["child/run"]
+
+
+def test_a_process_that_exits_zero_is_a_success(tmp_path, blockages):
+    from cave.core.cave_agent import CAVEAgent
+
+    store = tmp_path / "own"
+    _process_job(store, "run", "pass")
+    own = calendar(store)
+    heart = _full_heart(own.registry, own, tmp_path / "data")
+    CAVEAgent.fire_due_automations(heart)
+    auto = own.registry.get("run")
+    auto._process.wait()
+    CAVEAgent.fire_due_automations(heart)
+    assert (auto.last_outcome, auto.last_exit) == ("success", 0)
+    assert not (tmp_path / "data" / "automation_failures").exists()
+    assert by_name(own.own_entries())["run"]["last_outcome"] == "success"
+
+
+def test_a_held_job_re_made_while_its_process_runs_still_reports_its_exit(tmp_path, blockages):
+    from cave.core.cave_agent import CAVEAgent
+
+    parent = calendar(tmp_path / "parent")
+    child = tmp_path / "child"
+    path = _process_job(child, "run", "import sys, time; time.sleep(2); sys.exit(4)")
+    parent.add_source({"name": "child", "type": "dir", "path": str(child)})
+    heart = _full_heart(parent.registry, parent, tmp_path / "data")
+    CAVEAgent.fire_due_automations(heart)                             # its process starts
+    first = parent.registry.get("child/run")
+    path.write_text(json.dumps({**json.loads(path.read_text()), "description": "edited while it runs"}))
+    CAVEAgent.fire_due_automations(heart)                             # still running; the job is re-made
+    remade = parent.registry.get("child/run")
+    assert remade is not first and remade.last_outcome == "running"
+    remade._process.wait()
+    CAVEAgent.fire_due_automations(heart)
+    assert (remade.last_outcome, remade.last_exit) == ("failed", 4)

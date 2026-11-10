@@ -303,6 +303,8 @@ class Calendar(Compiler):
                 "enabled": auto.schema.enabled,
                 "run_count": auto.run_count,
                 "last_run": auto.last_run.isoformat() if auto.last_run else None,
+                "last_outcome": getattr(auto, "last_outcome", None),
+                "last_exit": getattr(auto, "last_exit", None),
             }
             if auto.schema.expected_deliverables:
                 entry["expected_deliverables"] = auto.schema.expected_deliverables
@@ -606,6 +608,7 @@ def _record_runs(store: Path, jobs: Dict[str, InputAutomation]) -> None:
 
 def _carry_clock(before: InputAutomation, after: InputAutomation) -> None:
     after.last_run, after.run_count = before.last_run, before.run_count
+    after.keep_outcome(before)
     after._cron_job.last_run, after._cron_job.run_count = before._cron_job.last_run, before._cron_job.run_count
 
 
@@ -785,6 +788,8 @@ def _entry(name: str, auto: InputAutomation, chain: List[str], key: str) -> Dict
         "enabled": auto.schema.enabled,
         "run_count": auto.run_count,
         "last_run": auto.last_run.isoformat() if auto.last_run else None,
+        "last_outcome": getattr(auto, "last_outcome", None),
+        "last_exit": getattr(auto, "last_exit", None),
         "source": chain[0],
         "calendar": "/".join(chain),
     }

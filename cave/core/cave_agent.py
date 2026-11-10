@@ -581,53 +581,69 @@ class CAVEAgent(
         completed_pids = []
         for name, proc_info in list(self._running_processes.items()):
             pid = proc_info["pid"]
-            original_start = proc_info.get("start_time_ticks", 0)
-            try:
-                os.kill(pid, 0)  # check alive
-                # PID exists — but is it OUR process or a reused PID?
-                if original_start:
-                    current_start = self._get_pid_start_time(pid)
-                    if current_start and current_start != original_start:
-                        # PID reused — our process is gone
-                        logger.warning("PID %d reused (start %d != %d), treating %s as dead",
-                                      pid, current_start, original_start, name)
+            auto = registry.get(name)
+            proc = getattr(auto, "_process", None)
+            exit_code = None
+            if proc is not None and getattr(proc, "pid", None) == pid:
+                # the process the job started (DESIGN §1): it says itself whether it still runs, and how it ended
+                exit_code = proc.poll()
+                if exit_code is None:
+                    continue  # still running
+                auto._process = None
+            else:
+                original_start = proc_info.get("start_time_ticks", 0)
+                try:
+                    os.kill(pid, 0)  # check alive
+                    # PID exists — but is it OUR process or a reused PID?
+                    if original_start:
+                        current_start = self._get_pid_start_time(pid)
+                        if current_start and current_start != original_start:
+                            # PID reused — our process is gone
+                            logger.warning("PID %d reused (start %d != %d), treating %s as dead",
+                                          pid, current_start, original_start, name)
+                        else:
+                            continue  # same process, still running
                     else:
-                        continue  # same process, still running
-                else:
-                    continue  # no start_time recorded, assume still running
-            except ProcessLookupError:
-                pass  # finished
-            except PermissionError:
-                continue  # still running, different user
+                        continue  # no start_time recorded, assume still running
+                except ProcessLookupError:
+                    pass  # finished
+                except PermissionError:
+                    continue  # still running, different user
 
-            # Process finished — reap zombie
-            try:
-                os.waitpid(pid, os.WNOHANG)
-            except ChildProcessError:
-                pass  # already reaped
+                # Process finished — reap zombie
+                try:
+                    os.waitpid(pid, os.WNOHANG)
+                except ChildProcessError:
+                    pass  # already reaped
 
             # Check deliverables
-            auto = registry.get(name)
             deliverables_ok = True
             missing = []
             if auto and auto.schema.expected_deliverables:
                 missing = [p for p in auto.schema.expected_deliverables if not Path(p).exists()]
                 deliverables_ok = not missing
 
-            status = "success" if deliverables_ok else "deliverables_missing"
+            if exit_code not in (None, 0):
+                status = "failed"
+            else:
+                status = "success" if deliverables_ok else "deliverables_missing"
             self._automation_results[name] = {
                 "status": status,
-                "result": {"pid": pid, "missing_deliverables": missing},
+                "result": {"pid": pid, "exit_code": exit_code, "missing_deliverables": missing},
                 "timestamp": datetime.now().isoformat(),
             }
+            if auto is not None:
+                auto.last_outcome, auto.last_exit = status, exit_code
 
-            if not deliverables_ok:
-                self._write_automation_failure(name, {
-                    "status": "deliverables_missing",
-                    "pid": pid,
-                    "missing": missing,
-                })
+            if status != "success":
+                failure = {"status": status, "pid": pid, "exit_code": exit_code, "missing": missing}
+                self._write_automation_failure(name, failure)
+                from cave.core.blockage_store import BlockageStore
+                BlockageStore().add(name, failure)
+                logger.warning("Process %d for %s ended %s (exit %s)", pid, name, status, exit_code)
             else:
+                from cave.core.blockage_store import BlockageStore
+                BlockageStore().mark_resolved(name)
                 logger.info("Process %d for %s completed, deliverables OK", pid, name)
 
             # One-shot cleanup for async processes
@@ -700,6 +716,7 @@ class CAVEAgent(
                     "result": result,
                     "timestamp": datetime.now().isoformat(),
                 }
+                auto.last_outcome, auto.last_exit = "running", None
                 continue  # skip to next automation
 
             # Sync result — check expected_deliverables immediately
@@ -721,6 +738,8 @@ class CAVEAgent(
                 "result": result,
                 "timestamp": datetime.now().isoformat(),
             }
+            auto.last_outcome = "deliverables_missing" if status == "deliverables_missing" else final_status
+            auto.last_exit = None
 
             # On success — resolve any previous blockages for this automation
             if final_status == "success":
@@ -748,6 +767,7 @@ class CAVEAgent(
                 if par_auto:
                     try:
                         par_result = par_auto.fire()
+                        par_auto.last_outcome, par_auto.last_exit = "success", None
                         logger.info("Parallel fired: %s → %s", par_name, par_result.get("status", "?"))
                         self._automation_results[par_name] = {
                             "status": "success",
@@ -755,6 +775,7 @@ class CAVEAgent(
                             "timestamp": __import__("datetime").datetime.now().isoformat(),
                         }
                     except Exception as e:
+                        par_auto.last_outcome, par_auto.last_exit = "failed", None
                         logger.error("Parallel automation %s failed: %s", par_name, e)
                         self._write_automation_failure(par_name, {"status": "error", "error": str(e)})
 
@@ -790,7 +811,8 @@ class CAVEAgent(
             "timestamp": datetime.now().isoformat(),
             "result": result,
         }
-        (failures_dir / f"{name}_{ts}.json").write_text(json.dumps(report, indent=2, default=str))
+        # a held job's name is <chain>/<job>: each "/" written "__", so the report is one file in this folder
+        (failures_dir / f"{name.replace('/', '__')}_{ts}.json").write_text(json.dumps(report, indent=2, default=str))
         logger.warning("Block report written for automation %s", name)
 
     def assemble_morning_briefing(self) -> str:

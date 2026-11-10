@@ -41,7 +41,7 @@ class CAVEHTTPServer:
         self.app = FastAPI(
             title="CAVE Harness",
             description="Code Agent Virtualization Environment",
-            version="0.1.1",
+            version="0.1.2",
         )
 
         self._register_lifecycle()
@@ -66,7 +66,7 @@ class CAVEHTTPServer:
         # === Health ===
         @self.app.get("/health")
         def health():
-            return {"status": "ok", "version": "0.1.1"}
+            return {"status": "ok", "version": "0.1.2"}
 
         # === Bash Exec ===
         @self.app.post("/exec")

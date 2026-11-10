@@ -25,7 +25,10 @@ A **job** is one JSON file, an `AutomationSchema`: its name, its trigger (a `sch
 `every:<seconds>` — or an `event_name`), what it runs (a `code_pointer` with its `code_args`, a `prompt_template`, or a
 `chain_spec`), where its result goes (`delivery`), and its gates (`expected_deliverables`, `depends_on`, `one_shot`,
 `parallel`, `enabled`). `Automation.create` makes the job's live object from it — a `CronAutomation` for a schedule,
-an `EventAutomation` for an event, a `ManualAutomation` otherwise.
+an `EventAutomation` for an event, a `ManualAutomation` otherwise. A job file names no path of the machine it runs on:
+every string of its `code_args` is filled, when it runs, with `${CALENDAR_DIR}` — the folder of the job's own file, set
+by the registry that loads or holds it — and `${PYTHON}`, the interpreter running the clock (`render_args`, through
+lists and dicts; those two braced names only, every other `$` left exactly as written).
 
 An `AutomationRegistry` holds the live jobs of one folder (`load_all`, `hot_reload`, `register`, `save_schema`, written
 whole or not at all). A `Calendar` (`cave/core/calendar.py`) compiles a scheduling spec into a registered job
@@ -38,6 +41,16 @@ deliverables, records a failure as a blockage, removes a one-shot job and fires 
 `automation_hot_reload` tick that reloads the folder every 300 s. A job is due by its SDNA `CronJob`: a cron job first
 fires at its next real boundary after it is loaded, an interval job at once. `CAVEAgent.get_calendar()` is the calendar
 over the agent's own registry — the one its clock ticks.
+
+**A job that starts a process is followed to its end.** A job whose `code_pointer` returns a `subprocess.Popen` keeps
+the process and names its `pid`, so the heart tracks it as it tracks any job that names one: the job is `running` until
+the process ends, and then its outcome is the process's exit code — 0 a success, anything else a failure — read from
+the process itself, never inferred from whether the pid still answers. Every job's last outcome is kept on it and shown
+with it in every listing of its calendar (`list_scheduled`, the joined view): `last_outcome` (`running`, `success`,
+`failed`, `deliverables_missing`) and, for a process, `last_exit`, so a job that fails in the background is seen
+wherever its calendar is read (OM's calendar panels say `failed, exit <n>`). A failure is also written as a block report
+in the agent's `automation_failures/` folder — its file named by the job, each "/" of a held job's name written "__" —
+and as a blockage. A job fired again while its last process still runs is followed by its newest process.
 
 ## 2. The calendar tree — every calendar can be the parent of any other
 

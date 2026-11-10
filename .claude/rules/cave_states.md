@@ -13,6 +13,8 @@ Every feature of CAVE goes through the release line (cross-project-fixes' `22-se
 
 | feature | DESIGNED | BUILT | PROVEN | VERSIONED | RELEASED | SHOWN |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|
-| the calendar tree — every calendar the parent of any other (DESIGN §2) |  |  |  | ● |  |  |
+| the calendar tree — every calendar the parent of any other (DESIGN §2) |  |  |  |  | ● |  |
+| a job file names no path of its machine: `${CALENDAR_DIR}` and `${PYTHON}` in its args (DESIGN §1) |  |  |  | ● |  |  |
+| a job that starts a process is followed to its end: its exit code is its outcome, shown in every listing (DESIGN §1) |  |  |  | ● |  |  |
 | OM's devdir loader takes the claim for each folder it holds (DESIGN §2, ASPIRATIONAL) | ● |  |  |  |  |  |
 | an application whose registry fires only its own jobs claims its folder without writing into it (DESIGN §2, ASPIRATIONAL) | ● |  |  |  |  |  |

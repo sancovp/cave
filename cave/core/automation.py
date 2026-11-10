@@ -47,6 +47,8 @@ import json
 import importlib
 import logging
 import os
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from dataclasses import dataclass, field
@@ -161,6 +163,24 @@ class AutomationSchema:
         )
 
 
+def render_args(value: Any, calendar_dir: Optional[Path]) -> Any:
+    """A job's code_args with `${CALENDAR_DIR}` (the folder of its own file) and `${PYTHON}` (the interpreter running the
+    clock) filled into every string, through lists and dicts; those two braced names only — any other `$`, `$$` and
+    `$name` included, is left exactly as written. So a job file names no path of the machine it runs on."""
+    names = {"${PYTHON}": sys.executable}
+    if calendar_dir is not None:
+        names["${CALENDAR_DIR}"] = str(calendar_dir)
+    if isinstance(value, str):
+        for token, filled in names.items():
+            value = value.replace(token, filled)
+        return value
+    if isinstance(value, list):
+        return [render_args(v, calendar_dir) for v in value]
+    if isinstance(value, dict):
+        return {k: render_args(v, calendar_dir) for k, v in value.items()}
+    return value
+
+
 # =============================================================================
 # AUTOMATION — A Link with trigger + delivery
 # =============================================================================
@@ -199,7 +219,20 @@ class InputAutomation(Link):
         self._selfbot = SelfBot()
 
         self.last_run: Optional[datetime] = None
+        # the folder of the job's own file, set by the registry that loads or holds it: ${CALENDAR_DIR} in its code_args
+        self.calendar_dir: Optional[Path] = None
         self.run_count: int = 0
+        # what the heart follows (DESIGN §1): the process this job last started, and the job's last outcome — running,
+        # success, failed, deliverables_missing — with the exit code of that process
+        self._process: Optional[subprocess.Popen] = None
+        self.last_outcome: Optional[str] = None
+        self.last_exit: Optional[int] = None
+
+    def keep_outcome(self, before: "InputAutomation") -> None:
+        """Carry what the heart follows across a re-made job: the process it is following, and the last outcome."""
+        self._process = getattr(before, "_process", None)
+        self.last_outcome = getattr(before, "last_outcome", None)
+        self.last_exit = getattr(before, "last_exit", None)
 
     @property
     def name(self) -> str:
@@ -259,11 +292,14 @@ class InputAutomation(Link):
                     error=f"Code pointer {self.schema.code_pointer} could not be imported",
                 )
             try:
-                args = {**self.schema.code_args}
+                args = render_args({**self.schema.code_args}, self.calendar_dir)
                 args.update(ctx.get("extra_args", {}))
                 code_result = func(**args)
                 result_data["code_result"] = code_result
                 ctx["code_result"] = code_result
+                if isinstance(code_result, subprocess.Popen):  # a process of its own: the heart follows it to its end
+                    self._process = code_result
+                    result_data["pid"] = code_result.pid
             except Exception as e:
                 logger.exception(f"Code execution failed for {self.name}: {e}")
                 return LinkResult(
@@ -667,6 +703,7 @@ class AutomationRegistry:
         for json_file in self._dir.glob("*.json"):
             try:
                 auto = Automation.create(schema_path=json_file)
+                auto.calendar_dir = self._dir
                 self.automations[auto.name] = auto
                 logger.info(f"Loaded automation: {auto.name} ({auto.__class__.__name__})")
             except Exception as e:
@@ -697,6 +734,7 @@ class AutomationRegistry:
             if name not in self.automations:
                 try:
                     auto = Automation.create(schema=schema)
+                    auto.calendar_dir = self._dir
                     self.automations[name] = auto
                     added.append(name)
                     logger.info("Hot-reload: added %s", name)
@@ -715,6 +753,8 @@ class AutomationRegistry:
                     existing.schema.prompt_template != schema.prompt_template):
                     try:
                         auto = Automation.create(schema=schema)
+                        auto.calendar_dir = self._dir
+                        auto.keep_outcome(existing)
                         self.automations[name] = auto
                         updated.append(name)
                         logger.info("Hot-reload: updated %s", name)
@@ -734,6 +774,8 @@ class AutomationRegistry:
         return {"added": added, "removed": removed, "updated": updated}
 
     def register(self, automation: InputAutomation):
+        if getattr(automation, "calendar_dir", None) is None:
+            automation.calendar_dir = self._dir
         self.automations[automation.name] = automation
 
     def unregister(self, name: str) -> bool:
@@ -748,6 +790,7 @@ class AutomationRegistry:
 
         `origin` is the job's own file in that calendar's folder; the job is never saved into this registry's folder.
         """
+        automation.calendar_dir = Path(origin).parent
         self.automations[automation.name] = automation
         self.mounted[automation.name] = Path(origin)
 

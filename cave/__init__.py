@@ -49,7 +49,7 @@ from .core.hooks import (
     AntigravityEnvelopeAdapter,
 )
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 __all__ = [
     # Core agents
     "CodeAgent",
