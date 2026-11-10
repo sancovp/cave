@@ -543,6 +543,15 @@ class CAVEAgent(
         lines.append(f"Updated: {datetime.utcnow().isoformat()}")
         status_file.write_text("\n".join(lines))
 
+    def get_calendar(self):
+        """The Calendar over this agent's automation registry — the one its heart's clock ticks. Its sources file is
+        `calendar_sources_path` when the agent sets one, else `<the registry's folder>/.calendar/sources.json`."""
+        if getattr(self, "_calendar", None) is None:
+            from .calendar import Calendar
+            self._calendar = Calendar(self.automation_registry,
+                                      sources_path=getattr(self, "calendar_sources_path", None))
+        return self._calendar
+
     def fire_due_automations(self):
         """Fire all CronAutomations that are due. Called by Heart tick.
 
@@ -623,8 +632,8 @@ class CAVEAgent(
 
             # One-shot cleanup for async processes
             if auto and auto.schema.one_shot:
+                schema_path = registry.schema_path(name)
                 registry.unregister(name)
-                schema_path = registry._dir / f"{name}.json"
                 if schema_path.exists():
                     schema_path.unlink()
                 logger.info("One-shot async automation %s removed after process completion", name)
@@ -634,10 +643,24 @@ class CAVEAgent(
         for name in completed_pids:
             del self._running_processes[name]
 
-        # --- Phase 2: Fire due automations ---
+        # --- Phase 2: Fire due automations — first the calendar's sources: every folder calendar beneath this one
+        # that has no nearer clock is held, so its jobs are due here too. Only a calendar over the registry this heart
+        # fires is ticked: an app whose get_calendar() answers a calendar over another registry keeps its own calendar
+        # as it was, and nothing is claimed, mounted or written for it ---
+        own_held = True
+        try:
+            calendar = self.get_calendar()
+            if getattr(calendar, "registry", None) is registry:
+                calendar.tick_sources()
+                own_held = getattr(calendar, "own_held", True)
+        except Exception as e:
+            logger.error("Calendar sources tick failed: %s", e)
         to_unregister = []
 
         for auto in registry.get_due():
+            # another clock holds this calendar's own folder this beat: it fires these jobs until it hands them back
+            if not own_held and auto.name not in registry.mounted:
+                continue
             # Check depends_on — skip if any dependency hasn't succeeded
             deps = auto.schema.depends_on
             if deps:
@@ -737,8 +760,8 @@ class CAVEAgent(
 
         # Clean up one-shots
         for name in to_unregister:
+            schema_path = registry.schema_path(name)
             registry.unregister(name)
-            schema_path = registry._dir / f"{name}.json"
             if schema_path.exists():
                 schema_path.unlink()
             logger.info("One-shot automation %s removed after firing", name)

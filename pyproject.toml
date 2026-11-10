@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cave-harness"
-version = "0.1.0"
+version = "0.1.1"
 description = "Code Agent Virtualization Environment - Virtualize any terminal-based code agent"
 readme = "README.md"
 license = {text = "GPBL-1.0"}

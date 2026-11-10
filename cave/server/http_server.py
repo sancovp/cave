@@ -51,7 +51,7 @@ from ..core.organ_daemon import run as run_organ_daemon
 app = FastAPI(
     title="CAVE Harness",
     description="Code Agent Virtualization Environment - Live Mirror",
-    version="0.1.0"
+    version="0.1.1"
 )
 
 # Global CAVEAgent instance - initialized on startup
@@ -416,7 +416,7 @@ def set_auto_mode(data: Dict[str, Any]):
 # === Health ===
 @app.get("/health")
 def health():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "0.1.1"}
 
 
 # === Live Mirror Endpoints ===

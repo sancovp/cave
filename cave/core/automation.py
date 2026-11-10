@@ -646,13 +646,21 @@ class AutomationRegistry:
     registry.automations and see EXACTLY what the system does.
 
     Uses Automation.create() factory to load JSONs into the correct subtype.
+
+    `fires_sources`: whether the clock that ticks this registry holds the jobs of the calendars beneath it (the
+    Calendar's `tick_sources`); a registry that fires only its own kind of job sets it False, so it never claims a
+    calendar whose jobs it would refuse.
     """
+
+    fires_sources = True
 
     def __init__(self, automations_dir: Optional[Path] = None):
         self.automations: dict[str, InputAutomation] = {}
         # TRIGGERS: CronAutomation hot-reload via file write to /tmp/heaven_data/automations/
         self._dir = automations_dir or Path(os.environ.get("HEAVEN_DATA_DIR", "/tmp/heaven_data")) / "automations"
         self._dir.mkdir(parents=True, exist_ok=True)
+        # name → the file of a job this registry holds for another calendar (a source it fires); never saved here
+        self.mounted: dict[str, Path] = {}
 
     def load_all(self):
         """Load all automation JSONs from directory via factory."""
@@ -713,8 +721,11 @@ class AutomationRegistry:
                     except Exception as e:
                         logger.error("Hot-reload: failed to update %s: %s", name, e)
 
-        # Remove deleted — a file that is still there but did not parse (read mid-write) keeps its entry
+        # Remove deleted — a file that is still there but did not parse (read mid-write) keeps its entry;
+        # a mounted job lives in its own calendar's folder, and the calendar's clock tick keeps it in step
         for name in list(self.automations.keys()):
+            if name in self.mounted:
+                continue
             if name not in on_disk and not (self._dir / f"{name}.json").exists():
                 del self.automations[name]
                 removed.append(name)
@@ -726,12 +737,35 @@ class AutomationRegistry:
         self.automations[automation.name] = automation
 
     def unregister(self, name: str) -> bool:
+        self.mounted.pop(name, None)
         if name in self.automations:
             del self.automations[name]
             return True
         return False
 
+    def mount(self, automation: InputAutomation, origin: Path):
+        """Holds a job of another calendar, under the name this calendar gives it, so this registry's clock fires it.
+
+        `origin` is the job's own file in that calendar's folder; the job is never saved into this registry's folder.
+        """
+        self.automations[automation.name] = automation
+        self.mounted[automation.name] = Path(origin)
+
+    def unmount(self, name: str) -> bool:
+        """Lets go of a job held for another calendar; its file is left where it is."""
+        if self.mounted.pop(name, None) is None:
+            return False
+        self.automations.pop(name, None)
+        return True
+
+    def schema_path(self, name: str) -> Path:
+        """The file a job lives in: its own calendar's file for a mounted job, else this registry's folder."""
+        return self.mounted.get(name) or self._dir / f"{name}.json"
+
     def save_schema(self, schema: AutomationSchema) -> Path:
+        # a job held for another calendar is changed only in its own calendar's folder
+        if schema.name in self.mounted:
+            raise ValueError(f"{schema.name!r} is a job of another calendar: change it in its own folder")
         # written whole or not at all: hot_reload never sees a half-written file
         path = self._dir / f"{schema.name}.json"
         tmp = path.with_name(path.name + ".tmp")
