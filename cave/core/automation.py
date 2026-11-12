@@ -108,6 +108,8 @@ class AutomationSchema:
     priority: int = 5
     tags: list = field(default_factory=list)
     enabled: bool = True
+    # the job tells its own failures, so its heart records them and tells no one (DESIGN.md §1)
+    tells_failures: bool = False
 
     @classmethod
     def from_json(cls, path: Path) -> 'AutomationSchema':
@@ -141,6 +143,8 @@ class AutomationSchema:
             "parallel": self.parallel,
             "tags": self.tags,
             "enabled": self.enabled,
+            # written only when set, so a job file that says nothing of it is saved as it was
+            **({"tells_failures": True} if self.tells_failures else {}),
         }
 
     def to_cron_job(self) -> CronJob:
@@ -750,7 +754,8 @@ class AutomationRegistry:
                     existing.schema.code_args != schema.code_args or
                     existing.schema.description != schema.description or
                     list(existing.schema.tags or []) != list(schema.tags or []) or
-                    existing.schema.prompt_template != schema.prompt_template):
+                    existing.schema.prompt_template != schema.prompt_template or
+                    existing.schema.tells_failures != schema.tells_failures):
                     try:
                         auto = Automation.create(schema=schema)
                         auto.calendar_dir = self._dir

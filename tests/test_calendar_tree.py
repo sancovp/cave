@@ -224,7 +224,8 @@ def test_a_calendar_id_is_its_folder_and_its_clock_stays_out_of_git(tmp_path):
     assert calendar_id(store) == calendar_id(tmp_path / "c" / ".." / "c") != calendar_id(other)
     assert not (store / META_DIR).exists()                   # an id writes nothing
     claim(store, "own", 0)
-    assert (store / META_DIR / ".gitignore").read_text().split() == [CLOCK_FILE, RUNS_FILE]
+    from cave.core.calendar import IGNORED
+    assert (store / META_DIR / ".gitignore").read_text().split() == list(IGNORED)
 
 
 # --- fire once ---------------------------------------------------------------------------------------------------

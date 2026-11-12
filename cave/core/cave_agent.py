@@ -637,13 +637,10 @@ class CAVEAgent(
 
             if status != "success":
                 failure = {"status": status, "pid": pid, "exit_code": exit_code, "missing": missing}
-                self._write_automation_failure(name, failure)
-                from cave.core.blockage_store import BlockageStore
-                BlockageStore().add(name, failure)
+                CAVEAgent.record_outcome(self, name, failure, auto=auto, tracked=proc_info)
                 logger.warning("Process %d for %s ended %s (exit %s)", pid, name, status, exit_code)
             else:
-                from cave.core.blockage_store import BlockageStore
-                BlockageStore().mark_resolved(name)
+                CAVEAgent.record_outcome(self, name, None, auto=auto, tracked=proc_info)
                 logger.info("Process %d for %s completed, deliverables OK", pid, name)
 
             # One-shot cleanup for async processes
@@ -707,6 +704,10 @@ class CAVEAgent(
                     "started_at": datetime.now().isoformat(),
                     "start_time_ticks": self._get_pid_start_time(result_pid),
                     "run_id": str(uuid.uuid4())[:8],
+                    # what its telling needs if the job is gone from the registry when its process ends
+                    "calendar_dir": str(auto.calendar_dir) if getattr(auto, "calendar_dir", None) else None,
+                    "tells_failures": bool(getattr(auto.schema, "tells_failures", False)),
+                    "one_shot": bool(getattr(auto.schema, "one_shot", False)),
                 }
                 logger.info("Tracking async process %d (run=%s) for %s",
                            result_pid, self._running_processes[auto.name]["run_id"], auto.name)
@@ -741,21 +742,17 @@ class CAVEAgent(
             auto.last_outcome = "deliverables_missing" if status == "deliverables_missing" else final_status
             auto.last_exit = None
 
-            # On success — resolve any previous blockages for this automation
+            # On success — resolve any previous blockages for this automation, telling a person when they were told
             if final_status == "success":
-                from cave.core.blockage_store import BlockageStore
-                BlockageStore().mark_resolved(auto.name)
+                CAVEAgent.record_outcome(self, auto.name, None, auto=auto)
 
-            # On failure — check for SDNA block report in agent history, store blockage
-            if status in ("error", "blocked", "deliverables_missing"):
-                self._write_automation_failure(auto.name, result)
+            # On failure — the block report, the blockage (an SDNA block report from the agent's history when it
+            # left one) and the telling
+            if final_status != "success":   # error, blocked, missing deliverables, a run left awaiting input
                 from cave.core.blockage_store import BlockageStore
-                store = BlockageStore()
-                # Try to read block report from agent history
-                agent_name = result.get("agent_name", auto.name)
-                br = store.read_block_report_from_history(agent_name)
-                block_data = br["block_report"] if br else result
-                store.add(auto.name, block_data)
+                br = BlockageStore().read_block_report_from_history(result.get("agent_name", auto.name))
+                CAVEAgent.record_outcome(self, auto.name, result, auto=auto,
+                                         blockage=br["block_report"] if br else None)
 
             # One-shot cleanup
             if auto.schema.one_shot:
@@ -767,7 +764,11 @@ class CAVEAgent(
                 if par_auto:
                     try:
                         par_result = par_auto.fire()
+                        if (par_result or {}).get("status") in ("error", "blocked"):
+                            raise RuntimeError(f"its run answered {par_result.get('status')}: "
+                                               f"{str(par_result.get('error') or par_result)[:300]}")
                         par_auto.last_outcome, par_auto.last_exit = "success", None
+                        CAVEAgent.record_outcome(self, par_name, None, auto=par_auto)
                         logger.info("Parallel fired: %s → %s", par_name, par_result.get("status", "?"))
                         self._automation_results[par_name] = {
                             "status": "success",
@@ -777,7 +778,7 @@ class CAVEAgent(
                     except Exception as e:
                         par_auto.last_outcome, par_auto.last_exit = "failed", None
                         logger.error("Parallel automation %s failed: %s", par_name, e)
-                        self._write_automation_failure(par_name, {"status": "error", "error": str(e)})
+                        CAVEAgent.record_outcome(self, par_name, {"status": "error", "error": str(e)}, auto=par_auto)
 
         # Clean up one-shots
         for name in to_unregister:
@@ -786,6 +787,51 @@ class CAVEAgent(
             if schema_path.exists():
                 schema_path.unlink()
             logger.info("One-shot automation %s removed after firing", name)
+
+    def record_outcome(self, name: str, failure: Optional[dict] = None, auto=None, blockage: Optional[dict] = None,
+                       tracked: Optional[dict] = None) -> str:
+        """Every outcome the heart reads goes through here (DESIGN.md §1, A failure is told to a person): a failure
+        writes its block report and its blockage (`blockage` when the agent left an SDNA block report, else the
+        failure), a success resolves the job's blockages, and the teller of the calendar the job belongs to
+        (`calendar_dir`: the folder of the registry that loaded or registered it, or of the calendar that holds it —
+        kept with its process in `tracked`, for a job gone from the registry when its process ends; else the heart's
+        own) is told, at a run of failures' first failure and at its first success, unless the job tells its own
+        failures; a one-shot job's record is dropped once told, since no success can follow.
+        Answers what the teller did; it never raises."""
+        from pathlib import Path
+        from cave.core.blockage_store import BlockageStore
+        try:
+            if failure is None:
+                BlockageStore().mark_resolved(name)
+            else:
+                CAVEAgent._write_automation_failure(self, name, failure)
+                BlockageStore().add(name, blockage if blockage is not None else failure)
+        except Exception as e:   # recording never stops the beat
+            logger.warning("Recording %s's outcome failed: %s", name, e)
+        schema = getattr(auto, "schema", None)
+        tracked = tracked or {}
+        tells_itself = getattr(schema, "tells_failures", False) if schema is not None else tracked.get("tells_failures")
+        one_shot = getattr(schema, "one_shot", False) if schema is not None else tracked.get("one_shot")
+        if tells_itself and failure is not None:   # its success still clears a run told before it said so
+            return "the job tells its own failures"
+        try:
+            from cave.core.automation import DeliveryRouter
+            from cave.core.calendar import META_DIR
+            from cave.core.telling import Teller
+            registry = getattr(self, "automation_registry", None)
+            folder = (getattr(auto, "calendar_dir", None) or tracked.get("calendar_dir")
+                      or (registry._dir if registry is not None else None))
+            if folder is None:
+                return "told no one: no calendar holds the job"
+            teller = Teller(Path(folder) / META_DIR, DeliveryRouter(self))
+            told = teller.cleared(name) if failure is None else teller.failed(name, failure)
+            if one_shot:   # it does not run again: no success can follow, and a later job of its name starts afresh
+                told += teller.forget(name)
+        except Exception as e:
+            told = f"told no one: {type(e).__name__}: {e}"
+        if told not in ("nothing to tell", "told no one: the calendar names no teller") and not told.startswith("already told"):
+            logger.info("Telling %s: %s", name, told)
+        return told
 
     @staticmethod
     def _get_pid_start_time(pid: int) -> int:

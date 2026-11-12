@@ -27,16 +27,18 @@ flowchart TB
     CLAIM["the clock's claim — claim · release: its own clock, else the nearest above (§2)"]:::core
     REG["AutomationRegistry — its own jobs · the jobs it holds for calendars beneath (mount) · fires_sources (§1, §2)"]:::core
     FETCH["fetch_calendar — http/https only, redirects checked, 5 s, 1 MB, X-Calendar-Via (§2)"]:::core
+    TELL["the teller — record_outcome · Teller: every outcome the heart reads recorded once; a run of failures told at its first failure and its first success, through the job's own calendar's tell.json (a delivery target, or issue:<owner>/<repo>), never for a job that tells_failures (§1)"]:::core
     FLOW["22-seq-calendar-tree — a beat of the heart holds and fires each job once; a parent lists an http source with the header (§2)"]:::core
   end
   subgraph STORES["A CALENDAR'S FOLDER — any folder of job files (§2)"]
     JOBS["<name>.json — one job each (AutomationSchema)"]:::store
-    META[".calendar/ — sources.json · clock.json · runs.json · .gitignore"]:::store
+    META[".calendar/ — sources.json · clock.json · runs.json · tell.json (where its failures are told) · tellings.json · .gitignore"]:::store
   end
   subgraph DEPS["EXTERNAL — their internals are not ours"]
     SDNA["SDNA · SEAM: CronJob (is_due, mark_run) and the chain ontology the Calendar compiles with"]:::dep
     CRON["croniter · SEAM: a cron expression's next time"]:::dep
     PEER["a running app's calendar · SEAM: GET <url> with X-Calendar-Via → a list of jobs"]:::dep
+    GH["GitHub · SEAM: an issue opened, read by its number, commented on and closed through gh's stored login"]:::dep
   end
 
   OM --> AGENT
@@ -52,6 +54,10 @@ flowchart TB
   REG --> SDNA
   CAL --> CRON
   FETCH --> PEER
+  AGENT --> TELL
+  TELL --> META
+  TELL -->|"issue:"| GH
+  FLOW -.-> TELL
   FLOW -.-> AGENT
   FLOW -.-> CAL
   FLOW -.-> CLAIM

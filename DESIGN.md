@@ -52,6 +52,28 @@ wherever its calendar is read (OM's calendar panels say `failed, exit <n>`). A f
 in the agent's `automation_failures/` folder — its file named by the job, each "/" of a held job's name written "__" —
 and as a blockage. A job fired again while its last process still runs is followed by its newest process.
 
+**A failure is told to a person.** Every outcome the heart reads — a process's end, an in-process job's result, a
+parallel job's — goes through one place (`record_outcome`): a failure (an exit other than 0, a result of error, blocked
+or awaiting input, missing deliverables) writes its block report and its blockage, a success resolves the job's
+blockages, and the heart tells a person twice in a run of failures: at the first failure, and at the first success after
+it. It tells through the target named in `.calendar/tell.json` (`{"to": "<target>"}`) of the calendar the job belongs to
+— its `calendar_dir`, the folder of the registry that loaded or registered it or of the calendar that holds it, kept with
+its process so a job gone from the registry when its process ends is told the same way — whichever clock fires it, so a
+project's folder of jobs says where its own failures go. The target is one of the delivery router's (`agent:` ·
+`channel:` · `file:` · `webhook:` · `tmux:` · `log` · `self`; a telling counts when it answers delivered or logged) or
+`issue:<owner>/<repo>`, which keeps one open issue per failing job on that GitHub repository, titled `JOB FAILED: <job>`
+and labelled `job-failed`, taking up an open one of that title before it opens another; the first success closes it
+with a comment. Whether a run of failures was told, and the issue that told it, is kept in `.calendar/tellings.json`
+(never committed) and in the heart's memory, so the issue is read back by its number, since GitHub's listings miss an
+issue made seconds before; a telling that could not reach its target is tried again at the next failure; a record that
+cannot be read is set aside as `tellings.json.unreadable`, never overwritten; a one-shot job's record is dropped once
+told, since no success can follow. Every `gh` call runs on `gh`'s own stored login when it has one, so a token the
+agent's environment carries is never used ahead of it, and each call is cut at 20 s, since the heart's ticks run in
+series. A calendar whose `tell.json` names no target records its failures and tells no one. A job that tells its own
+failures says so in its file (`tells_failures: true`, written only when set), and the heart records them and tells no
+one, so no failure is told twice; its success still clears a run told before it said so. The teller makes its calendar's
+`.calendar/` folder, and its `.gitignore`, itself, so a folder no clock has claimed commits no record either. Telling never fails a beat: what it did, or why it told no one, is logged.
+
 ## 2. The calendar tree — every calendar can be the parent of any other
 
 **A calendar HAS jobs and HAS sources; a source IS a calendar.** Any folder of job files is a calendar — a running
@@ -63,9 +85,11 @@ sit under one parent today and another tomorrow.
 
 **Where a calendar keeps its tree:** its `.calendar/` folder — never read as a job — holds `sources.json`
 (`{"sources": [...]}`; an application may keep its sources file elsewhere, `Calendar(registry, sources_path=…)`, the
-agent's `calendar_sources_path`), `clock.json` (the clock that fires it) and `runs.json` (when each of its jobs last
-ran, written by the clock that fired it); the folder makes its own `.gitignore`, so the clock and the runs are
-never committed and a committed sources file is. Its **id**, the name it answers to when a loop is
+agent's `calendar_sources_path`), `clock.json` (the clock that fires it), `runs.json` (when each of its jobs last
+ran, written by the clock that fired it), `tell.json` (where its failures are told, §1) and `tellings.json` (which
+failures were told); the folder makes its own `.gitignore`, so the clock, the runs and the tellings (and the files their
+writes leave) are never committed, and a committed sources file and teller are; a `.gitignore` made before keeps every
+line as written and gains each name it lacks. Its **id**, the name it answers to when a loop is
 checked, is the machine's name and the folder's resolved path, hashed (`calendar_id`): the same whether the folder is
 reached as a folder or through the application whose store it is, and nothing is written to make it. A calendar lists
 the kinds of source it takes (`source_types`): an application whose sources are added over its API by anyone who

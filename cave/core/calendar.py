@@ -568,13 +568,22 @@ class Calendar(Compiler):
 # =============================================================================
 
 
+IGNORED = (CLOCK_FILE, RUNS_FILE, "tellings.json", "tellings.json.tmp", "tellings.json.unreadable")
+# ↑ what a calendar's folder never commits: its clock, its runs, its tellings and the files the tellings' writes leave
+
+
 def _meta(store: Path) -> Path:
-    """The calendar's `.calendar/` folder, made with a .gitignore so its clock and its runs are never committed."""
+    """The calendar's `.calendar/` folder, its .gitignore holding every name of `IGNORED`: a file made before keeps every
+    line as it was written, comments included, and gains each name it lacks, so nothing of the calendar's own running is
+    ever committed."""
     meta = Path(store) / META_DIR
     meta.mkdir(parents=True, exist_ok=True)
     ignore = meta / ".gitignore"
-    if not ignore.exists():
-        ignore.write_text(f"{CLOCK_FILE}\n{RUNS_FILE}\n")
+    text = ignore.read_text() if ignore.exists() else ""
+    have = {line.strip() for line in text.splitlines()}
+    missing = [n for n in IGNORED if n not in have]
+    if missing:
+        ignore.write_text(text + ("" if not text or text.endswith("\n") else "\n") + "".join(f"{n}\n" for n in missing))
     return meta
 
 
