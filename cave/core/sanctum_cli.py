@@ -192,6 +192,12 @@ def handle_status(argument: str) -> str:
     for r in rituals:
         name = r["name"]
         duration = r.get("duration_minutes", 30)
+        # Pinned rituals (time_of_day) anchor + reset the stack — same rule as the
+        # automation sync, one implementation (issue #40).
+        from .sanctum_automations import _ritual_anchor
+        anchor = _ritual_anchor(r)
+        if anchor:
+            current_time = current_time.replace(hour=anchor[0], minute=anchor[1])
         scheduled = current_time.strftime("%H:%M")
         completions = r.get("completions", [])
         is_done = any(c.get("date", "").startswith(today) for c in completions)

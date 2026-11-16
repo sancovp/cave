@@ -61,6 +61,18 @@ from sdna.selfbot import SelfBot
 
 logger = logging.getLogger(__name__)
 
+# Schedules are AUTHORED in the operator's timezone (sanctum_automations writes cron
+# exprs via Clock.from_config()), so they must be EVALUATED in it too (issue #41 —
+# naive-UTC evaluation fired every cron 4h early in ET terms). Wire sdna.cron to the
+# same Clock config every automation consumer uses. Best-effort: an unreadable config
+# leaves sdna.cron on its env/naive default rather than blocking import.
+try:
+    from sdna.cron import set_timezone as _set_cron_tz
+    from .world import Clock as _Clock
+    _set_cron_tz(_Clock.from_config().tz.key)
+except Exception as e:
+    logger.warning("automation: could not set cron schedule timezone: %s", e, exc_info=True)
+
 
 # =============================================================================
 # AUTOMATION SCHEMA — JSON-serializable definition

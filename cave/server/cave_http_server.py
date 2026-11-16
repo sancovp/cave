@@ -14,6 +14,7 @@ import threading
 from typing import Any, Dict
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
 from ..core.cave_agent import CAVEAgent
@@ -102,8 +103,15 @@ class CAVEHTTPServer:
             import time
             message = data.get("message", "")
             press_enter = data.get("press_enter", True)
+            # Lazy re-attach: at boot the daemon starts BEFORE start_sancrev.sh creates
+            # the tmux session, so the init-time attach latches main_agent=None. Retry
+            # here so the first inject after the session exists heals the race.
             if cave.main_agent is None:
-                return {"error": "Main agent not attached"}
+                cave._ensure_attached()
+            if cave.main_agent is None:
+                # 503, not 200: an error body behind a 200 made four conductor
+                # dispatches read as delivered when nothing reached tmux (2026-08-18 e2e).
+                return JSONResponse(status_code=503, content={"error": "Main agent not attached"})
             cave.main_agent.send_keys(message)
             if press_enter:
                 time.sleep(0.5)

@@ -138,6 +138,44 @@ def _load_sanctum_context() -> Optional[Dict[str, Any]]:
     }
 
 
+def _ritual_anchor(ritual: Dict) -> Optional[tuple]:
+    """(hour, minute) PIN for a ritual from its time_of_day, or None to stack.
+
+    Issue #40: RitualSpec.time_of_day was a dead field — every ritual's hour was
+    EMERGENT from duration-stacking off morning_time (night-journal landed at 21:00
+    only because the durations summed to exactly 12h). A set time_of_day now pins
+    the ritual: 'morning' / 'evening' are semantic anchors reading morning_time /
+    night_time from journal_config (so config changes follow), and a literal 'HH:MM'
+    is honored as-is. Unset -> None -> the sequential stacking, unchanged. A
+    malformed value warns LOUDLY and stacks (never a silent wrong time).
+    """
+    tod = str(ritual.get("time_of_day") or "").strip().lower()
+    if not tod:
+        return None
+    if tod == "morning":
+        h, m = map(int, _get_morning_time().split(":"))
+        return h, m
+    if tod in ("evening", "night"):
+        night = "21:00"
+        if JOURNAL_CONFIG.exists():
+            try:
+                night = json.loads(JOURNAL_CONFIG.read_text()).get("night_time", night)
+            except (json.JSONDecodeError, OSError) as e:
+                logger.warning("time_of_day '%s' on '%s': journal_config unreadable (%s) — "
+                               "using %s", tod, ritual.get("name"), e, night)
+        h, m = map(int, night.split(":"))
+        return h, m
+    try:
+        h, m = map(int, tod.split(":"))
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return h, m
+        raise ValueError(f"out of range: {tod}")
+    except ValueError as e:
+        logger.warning("Ritual '%s' has malformed time_of_day '%s' (%s) — falling back "
+                       "to sequential stacking", ritual.get("name"), tod, e)
+        return None
+
+
 def _is_completed_today(ritual: Dict, today: str) -> bool:
     """Check if ritual has a completion (done or skipped) for today's date."""
     for c in ritual.get("completions", []):
@@ -165,6 +203,9 @@ def _compute_schedule(rituals: List[Dict], start_hour: int, start_minute: int, c
     schedule = []
     current = start
     for r in rituals:
+        anchor = _ritual_anchor(r)
+        if anchor:
+            current = current.replace(hour=anchor[0], minute=anchor[1])
         schedule.append((r["name"], r.get("description", ""), current, r))
         current = current + timedelta(minutes=r.get("duration_minutes", 30))
     return schedule
@@ -203,6 +244,12 @@ def sync_ritual_automations() -> Dict[str, Any]:
         desc = ritual.get("description", "")
         freq = ritual.get("frequency", "daily").lower()
         duration = ritual.get("duration_minutes", 30)
+
+        # A pinned ritual (time_of_day set) anchors HERE and resets the stacking
+        # baseline; unpinned rituals keep stacking sequentially (issue #40).
+        anchor = _ritual_anchor(ritual)
+        if anchor:
+            current_time = current_time.replace(hour=anchor[0], minute=anchor[1])
 
         ritual_hour = current_time.hour
         ritual_minute = current_time.minute

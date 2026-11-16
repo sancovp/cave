@@ -41,6 +41,7 @@ import threading
 from typing import Any, Dict
 
 from fastapi import FastAPI
+from fastapi.responses import JSONResponse
 from starlette.responses import StreamingResponse
 
 from ..core.cave_agent import CAVEAgent
@@ -92,8 +93,14 @@ async def self_inject(data: Dict[str, Any]):
     message = data.get("message", "")
     press_enter = data.get("press_enter", True)
 
+    # Lazy re-attach: the daemon can start before its tmux session exists,
+    # latching main_agent=None at init. Retry so the first inject heals the race.
+    if cave is not None and cave.main_agent is None:
+        cave._ensure_attached()
     if cave is None or cave.main_agent is None:
-        return {"error": "Main agent not attached"}
+        # 503, not 200: an error body behind a 200 read as delivered to callers
+        # checking only the HTTP code (2026-08-18 conductor e2e).
+        return JSONResponse(status_code=503, content={"error": "Main agent not attached"})
 
     # Send the text into tmux
     cave.main_agent.send_keys(message)
