@@ -15,3 +15,14 @@
 - WHEN Codex works in `~/Documents/New project` → that folder's own `.codex/hooks.json` registers the same ten relays a
   second time (Codex's `config.toml` lists both sets), so each event there may start two; out of bounds, the owner's to
   clear · ✅ MEASURED 2026-11-16
+- WHEN the fold of SILAS's CAVE is begun → what it holds, read whole by blob against `main`'s history: nine commits of
+  June 21 on the branch `codex/silas-aios-cave-harness`, pushed to the public `sancovp/cave` as that side branch (the
+  publisher mirrors `master` only, so a publish wipes none of it), on a June base whose 78 files are all blobs of ours; 35
+  files changed, 5,224 lines added, every one SILAS-only — the relays, the AIOS bridge (`core/aios.py`, `mixins/aios.py`),
+  cognition (`core/cognition.py`, `mixins/cognition.py`, `mcp/cognition_mcp.py`), six SILAS loops (`loops/silas_*`), six
+  test files — and a 58-line change to `core/aios.py` and its test never committed, on that machine only; 9 of the files
+  it changed this project changed too since (`__init__.py` · `core/cave_agent.py` · `core/config.py` · `core/hooks.py` ·
+  `mixins/anatomy.py` · `mixins/hook_router.py` · `server/cave_http_server.py` · `server/http_server.py` ·
+  `pyproject.toml`, 36 commits of ours since June 20), so the fold is a three-way merge, never a copy; no secret in its
+  added lines · ✅ MEASURED 2026-11-16
+
