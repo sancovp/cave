@@ -1,5 +1,19 @@
 # CAVE — the agent runtime
 
+## READ ORDER
+
+CAVE, the agent runtime library: this one design, with no child design beneath it; the rest of CAVE's design is still
+held in the reference documents §0 names, read in here part by part.
+
+- for what CAVE is, what it ends as, where the rest of its design is held, and the version that monitors every app at
+  once → §0
+- for the calendar: jobs, the registry, the heart's clock, a failure told to a person → §1 · the dev flow
+  `.claude/rules/22-seq-calendar-tree.md`
+- for the calendar tree: sources, the joined view, the clock that holds each job once → §2 · the same dev flow
+- for CAVE's work — its notes of undone work, the outside work kept until it is unified → `workspace/CLAUDE.md`
+- ARCHIVE AND PROGRAM FOLDERS: `cave/` · `tests/` · `scripts/` · `automations/` · `inspections/` · `context/` · `docs/` ·
+  `workspace/` · `cave_harness.egg-info/`
+
 ## 0. What CAVE is, what it ends as, and where the rest of its design is
 
 CAVE is the agent runtime, the tower's L7 (the top-level design §15): the `CAVEAgent` base class an application
@@ -18,6 +32,14 @@ read into this design: `CAVEAgent`'s constructor wires SANCREV's SANCTUM catch-u
 library, against the library law above, and the rest of its design is held in two reference documents, rolled in
 here as each part is read — [`ARCHITECTURE.md`](ARCHITECTURE.md) (the runtime, its mixins and its servers) and
 [`CAVEAGENT_DESIGN.md`](CAVEAGENT_DESIGN.md) (the god object and its anatomy). That reading is owed, on the board.
+
+ASPIRATIONAL: **the version of CAVE that monitors every app at once.** Each coding agent's hooks — Claude Code's,
+Codex's — are relayed into a CAVE server, so one CAVE sees what every app runs, the source SANCREV's control center
+reads (SANCREV's `DESIGN.md` §1). Relays for both providers, their hook types, a hook router, cognitive spaces and an
+AIOS bridge were written outside the canonical home, for one AIOS of its own, on `sancovp/cave`'s side branch
+`codex/silas-aios-cave-harness`: that work is a separate thing, unified into this version when it is built and never
+before, under the library law above. The branch is held on GitHub; its one change never committed is kept in
+[`workspace/folds/silas-aios-cave-harness/`](workspace/folds/silas-aios-cave-harness/CLAUDE.md).
 
 ## 1. The calendar — jobs, the registry and the heart's clock
 
