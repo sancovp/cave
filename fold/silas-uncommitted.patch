@@ -1,0 +1,146 @@
+diff --git a/cave/core/aios.py b/cave/core/aios.py
+index 72ceaa8..088eda3 100644
+--- a/cave/core/aios.py
++++ b/cave/core/aios.py
+@@ -12,11 +12,19 @@ from typing import Any, Dict, Iterable, List, Optional
+ 
+ 
+ DEFAULT_REQUIRED_PATHS = [
++    ".github/workflows/silas-aios-ci.yml",
+     "silas_aios/AGENTS.md",
+     "silas_aios/kernel/boot_protocol.md",
+     "silas_aios/registries/term_nucleus.md",
+     "silas_aios/registries/surface_registry.md",
+     "silas_aios/search/skilltree.md",
++    "silas_aios/automation_stack/policy.md",
++    "silas_aios/automation_stack/containerization_notes.md",
++    "silas_aios/automation_stack/direction.md",
++    "silas_aios/automation_stack/daily_guarded_cadence_recommendation.md",
++    "silas_aios/automation_stack/no_secret_container_smoke_test_design.md",
++    "silas_aios/automation_stack/self_transformation_stewardship.md",
++    "silas_aios/automation_stack/supersystem_ci_contract.md",
+     "silas_aios/skilltree/project_skilltree.md",
+     "silas_aios/skilltree/test_lab.md",
+     "silas_aios/adapters/codex_skilltree_adapter.md",
+@@ -24,6 +32,11 @@ DEFAULT_REQUIRED_PATHS = [
+     "silas_aios/selector/boundary_gate.md",
+     "silas_aios/loops/coreflow.md",
+     "silas_aios/loops/context_reporting_contract.md",
++    "silas_aios/live/README.md",
++    "silas_aios/live/cadence_contract.md",
++    "silas_aios/live/stop_conditions.md",
++    "silas_aios/live/inbox_side_effect_policy.md",
++    "silas_aios/live/launch_manifest.md",
+     "silas_aios/ledgers/context_ledger.md",
+     "silas_aios/ledgers/budget_ledger.md",
+     "silas_aios/ledgers/loop_run_ledger.md",
+@@ -36,6 +49,12 @@ DEFAULT_REQUIRED_PATHS = [
+     "silas_aios/runtime/current_mode.md",
+     "silas_aios/runtime/next_action.md",
+     "silas_aios/runtime/selector_decision.json",
++    "silas_aios/runtime/coreflow_activation_probe/report.md",
++    "silas_aios/runtime/live_activation_readiness.md",
++    "silas_aios/runtime/automation_stack_report.md",
++    "silas_aios/runtime/automation_direction.md",
++    "silas_aios/runtime/simulated_week_2026_06_28.md",
++    "silas_aios/runtime/weekly_status_2026_06_28_simulated.md",
+     "silas_aios/runtime/skilltree_project_map.md",
+     "silas_aios/runtime/skilltree_lab/report.md",
+     "silas_aios/runtime/skilltree_coherence_report.md",
+@@ -49,6 +68,11 @@ DEFAULT_REQUIRED_PATHS = [
+     "docs/feed/index.html",
+     "docs/posts/0001-skilltree-coherence.html",
+     "docs/posts/0002-prompt-archives.html",
++    "docs/posts/0003-stop-conditions.html",
++    "docs/posts/0004-loop-engineering-ladder.html",
++    "docs/posts/0005-agent-os-cohort.html",
++    "docs/posts/0006-mutate-under-assay.html",
++    "docs/posts/0007-one-week-simulation.html",
+     "docs/styles.css",
+     ".codex/skills/sic-silas-aios/SKILL.md",
+     ".codex/skills/sic-skilltree-coherence/SKILL.md",
+@@ -61,6 +85,11 @@ DEFAULT_REQUIRED_PATHS = [
+     ".codex/skills/sic-silas-aios/scripts/aios_select.py",
+     ".codex/skills/sic-silas-aios/scripts/aios_skilltree_adapter.py",
+     ".codex/skills/sic-silas-aios/scripts/aios_gate.py",
++    "silas_aios/scripts/run_coreflow_activation_probe.py",
++    "silas_aios/scripts/check_live_activation_readiness.py",
++    "silas_aios/scripts/audit_automation_stack.py",
++    "silas_aios/scripts/select_automation_direction.py",
++    "silas_aios/scripts/run_supersystem_ci.py",
+ ]
+ 
+ DEFAULT_EXTS = (".md", ".txt", ".mdx", ".rst")
+diff --git a/tests/test_aios_bridge.py b/tests/test_aios_bridge.py
+index 0d891b9..c4db944 100644
+--- a/tests/test_aios_bridge.py
++++ b/tests/test_aios_bridge.py
+@@ -17,11 +17,19 @@ def _write(path, content):
+ def make_aios_root(tmp_path):
+     root = tmp_path / "project"
+     required = [
++        ".github/workflows/silas-aios-ci.yml",
+         "silas_aios/AGENTS.md",
+         "silas_aios/kernel/boot_protocol.md",
+         "silas_aios/registries/term_nucleus.md",
+         "silas_aios/registries/surface_registry.md",
+         "silas_aios/search/skilltree.md",
++        "silas_aios/automation_stack/policy.md",
++        "silas_aios/automation_stack/containerization_notes.md",
++        "silas_aios/automation_stack/direction.md",
++        "silas_aios/automation_stack/daily_guarded_cadence_recommendation.md",
++        "silas_aios/automation_stack/no_secret_container_smoke_test_design.md",
++        "silas_aios/automation_stack/self_transformation_stewardship.md",
++        "silas_aios/automation_stack/supersystem_ci_contract.md",
+         "silas_aios/skilltree/project_skilltree.md",
+         "silas_aios/skilltree/test_lab.md",
+         "silas_aios/adapters/codex_skilltree_adapter.md",
+@@ -29,6 +37,11 @@ def make_aios_root(tmp_path):
+         "silas_aios/selector/boundary_gate.md",
+         "silas_aios/loops/coreflow.md",
+         "silas_aios/loops/context_reporting_contract.md",
++        "silas_aios/live/README.md",
++        "silas_aios/live/cadence_contract.md",
++        "silas_aios/live/stop_conditions.md",
++        "silas_aios/live/inbox_side_effect_policy.md",
++        "silas_aios/live/launch_manifest.md",
+         "silas_aios/ledgers/context_ledger.md",
+         "silas_aios/ledgers/budget_ledger.md",
+         "silas_aios/ledgers/loop_run_ledger.md",
+@@ -41,6 +54,12 @@ def make_aios_root(tmp_path):
+         "silas_aios/runtime/current_mode.md",
+         "silas_aios/runtime/next_action.md",
+         "silas_aios/runtime/selector_decision.json",
++        "silas_aios/runtime/coreflow_activation_probe/report.md",
++        "silas_aios/runtime/live_activation_readiness.md",
++        "silas_aios/runtime/automation_stack_report.md",
++        "silas_aios/runtime/automation_direction.md",
++        "silas_aios/runtime/simulated_week_2026_06_28.md",
++        "silas_aios/runtime/weekly_status_2026_06_28_simulated.md",
+         "silas_aios/runtime/skilltree_project_map.md",
+         "silas_aios/runtime/skilltree_lab/report.md",
+         "silas_aios/runtime/skilltree_coherence_report.md",
+@@ -54,6 +73,11 @@ def make_aios_root(tmp_path):
+         "docs/feed/index.html",
+         "docs/posts/0001-skilltree-coherence.html",
+         "docs/posts/0002-prompt-archives.html",
++        "docs/posts/0003-stop-conditions.html",
++        "docs/posts/0004-loop-engineering-ladder.html",
++        "docs/posts/0005-agent-os-cohort.html",
++        "docs/posts/0006-mutate-under-assay.html",
++        "docs/posts/0007-one-week-simulation.html",
+         "docs/styles.css",
+         ".codex/skills/sic-silas-aios/SKILL.md",
+         ".codex/skills/sic-skilltree-coherence/SKILL.md",
+@@ -66,6 +90,11 @@ def make_aios_root(tmp_path):
+         ".codex/skills/sic-silas-aios/scripts/aios_select.py",
+         ".codex/skills/sic-silas-aios/scripts/aios_skilltree_adapter.py",
+         ".codex/skills/sic-silas-aios/scripts/aios_gate.py",
++        "silas_aios/scripts/run_coreflow_activation_probe.py",
++        "silas_aios/scripts/check_live_activation_readiness.py",
++        "silas_aios/scripts/audit_automation_stack.py",
++        "silas_aios/scripts/select_automation_direction.py",
++        "silas_aios/scripts/run_supersystem_ci.py",
+     ]
+     for rel in required:
+         _write(root / rel, f"# {rel}\nAIOS searchable content\n")
