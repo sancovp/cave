@@ -19,4 +19,4 @@ Every feature of CAVE goes through the release line (cross-project-fixes' `22-se
 | a failure is told to a person: every outcome through `record_outcome`, a run of failures told at its first failure and its first success through the job's own calendar's teller (DESIGN §1) |  |  |  |  |  | ● |
 | OM's devdir loader takes the claim for each folder it holds (DESIGN §2, ASPIRATIONAL) | ● |  |  |  |  |  |
 | an application whose registry fires only its own jobs claims its folder without writing into it (DESIGN §2, ASPIRATIONAL) | ● |  |  |  |  |  |
-| the relays that forward a coding agent's hooks into CAVE (`cave.relays`) — light to load, never hanging, folded from the outside clone where they were written (`cave_scratchpad.md`) |  |  |  |  |  |  |
+| the relays that forward a coding agent's hooks into CAVE (`cave.relays`) — light to load, never hanging, folded from the outside clone where they were written (`../../workspace/cave_scratchpad.md`) |  |  |  |  |  |  |

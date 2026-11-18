@@ -7,4 +7,7 @@ its design is held in [`ARCHITECTURE.md`](ARCHITECTURE.md) and [`CAVEAGENT_DESIG
 read into `DESIGN.md`. Its dev flow for the calendar tree is [`.claude/rules/22-seq-calendar-tree.md`](.claude/rules/22-seq-calendar-tree.md). Its board is [`.claude/rules/cave_states.md`](.claude/rules/cave_states.md), its stack
 [`.claude/rules/21-architecture-diagrams.md`](.claude/rules/21-architecture-diagrams.md), its history
 [`CHANGELOG.md`](CHANGELOG.md). Tests: `tests/` (`test_calendar_tree.py` holds the calendar tree's laws), run with a
-Python that resolves `cave` to this folder (`find_spec("cave").origin`).
+Python that resolves `cave` to this folder (`find_spec("cave").origin`). Its work — its notes of undone work
+(`workspace/cave_scratchpad.md`) and the inputs of a fold — goes in [`workspace/`](workspace/CLAUDE.md), which the
+publisher never copies; nothing but CAVE's program and its canon goes anywhere else in this folder, since the whole
+folder is published to `sancovp/cave`.
