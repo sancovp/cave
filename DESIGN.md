@@ -35,7 +35,7 @@ here as each part is read — [`ARCHITECTURE.md`](ARCHITECTURE.md) (the runtime,
 
 ASPIRATIONAL: **the version of CAVE that monitors every app at once.** Each coding agent's hooks — Claude Code's,
 Codex's — are relayed into a CAVE server, so one CAVE sees what every app runs, the source SANCREV's control center
-reads (SANCREV's `DESIGN.md` §1). Relays for both providers, their hook types, a hook router, cognitive spaces and an
+reads (SANCREV's `DESIGN.md` §1.1). Relays for both providers, their hook types, a hook router, cognitive spaces and an
 AIOS bridge were written outside the canonical home, for one AIOS of its own, on `sancovp/cave`'s side branch
 `codex/silas-aios-cave-harness`: that work is a separate thing, unified into this version when it is built and never
 before, under the library law above. The branch is held on GitHub; its one change never committed is kept in
