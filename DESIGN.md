@@ -2,8 +2,12 @@
 
 ## READ ORDER
 
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
+
 CAVE, the agent runtime library: this one design, with no child design beneath it; the rest of CAVE's design is still
 held in the reference documents §0 names, read in here part by part.
+
+> **END OF STATE FENCE**
 
 - for what CAVE is, what it ends as, where the rest of its design is held, and the version that monitors every app at
   once → §0
@@ -26,12 +30,18 @@ publishing manifest unit `cave`, which mirrors this folder to the public reposit
 package to PyPI; its version is stated in `pyproject.toml` and `cave/__version__`, and its history in `CHANGELOG.md`
 beside this file.
 
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
+
 **Configurable:** the calendar (§1, §2) takes every folder from its registry (`$HEAVEN_DATA_DIR/automations` unless an
 application passes its own) and its sources file, and names no machine and no person. The rest of CAVE is not yet
 read into this design: `CAVEAgent`'s constructor wires SANCREV's SANCTUM catch-up tick and its MiniCLI into the
 library, against the library law above, and the rest of its design is held in two reference documents, rolled in
 here as each part is read — [`ARCHITECTURE.md`](ARCHITECTURE.md) (the runtime, its mixins and its servers) and
 [`CAVEAGENT_DESIGN.md`](CAVEAGENT_DESIGN.md) (the god object and its anatomy). That reading is owed, on the board.
+
+> **END OF STATE FENCE**
+
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
 
 ASPIRATIONAL: **the version of CAVE that monitors every app at once.** Each coding agent's hooks — Claude Code's,
 Codex's — are relayed into a CAVE server, so one CAVE sees what every app runs, the source SANCREV's control center
@@ -40,6 +50,8 @@ AIOS bridge were written outside the canonical home, for one AIOS of its own, on
 `codex/silas-aios-cave-harness`: that work is a separate thing, unified into this version when it is built and never
 before, under the library law above. The branch is held on GitHub; its one change never committed is kept in
 [`workspace/folds/silas-aios-cave-harness/`](workspace/folds/silas-aios-cave-harness/CLAUDE.md).
+
+> **END OF STATE FENCE**
 
 ## 1. The calendar — jobs, the registry and the heart's clock
 
@@ -180,6 +192,8 @@ sets `fires_sources = False`, so it claims no calendar whose jobs it would refus
 application's folder carries no claim, so it is listed by a calendar above as an http source, never as a folder: listed
 as a folder, its jobs would be held above and fire twice, and nothing refuses that listing.
 
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
+
 **Who stands on it:** OM's daemon and HealthWorld are `CAVEAgent`s whose calendar is this one: OM's heart ticks its
 sources and fires the folders beneath it; HealthWorld's own-jobs registry fires only its own jobs and joins running
 apps' calendars to its listing; each serves its joined view at its own `GET /api/automations` and its sources at
@@ -187,7 +201,13 @@ apps' calendars to its listing; each serves its joined view at its own `GET /api
 `get_calendar()`, a calendar over a registry its heart does not fire, so the heart leaves it as it was; listed as
 another calendar's source, it answers in the untagged shape (its jobs read as its own, a source's as that source's).
 
+> **END OF STATE FENCE**
+
+> **WARNING: STATE MENTIONED IN DESIGN.MD -- NOT ALLOWED IN DESIGN. THIS MUST MOVE TO STATE FILE WHEN WORKED ON. DO NOT REMOVE THIS FENCE UNTIL THE STATE IS RECONCILED AND EVERY INTENDED THING IS BUILT AS INTENDED. DO NOT SKIP THIS.**
+
 ASPIRATIONAL: OM's devdir loader takes no claim for the `.cave/automations` folders it holds, so a folder under OM's
 onion that another calendar's clock lists as a source fires there too; the loader takes the claim for each folder it
 holds. ASPIRATIONAL: an application whose registry fires only its own jobs claims its folder without writing into it,
 so a folder listing of it is refused.
+
+> **END OF STATE FENCE**
