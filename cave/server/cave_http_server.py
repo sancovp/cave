@@ -433,5 +433,10 @@ class CAVEHTTPServer:
 
     def run(self):
         """Run the server."""
+        import os
         import uvicorn
+        # The marker a hook reads before it hops to CAVE_URL over HTTP: this process serves that cave, on the
+        # event loop the hook would block, so the hop is never made from inside it. A child process inherits
+        # the value with another pid.
+        os.environ["CAVE_SELF_PID"] = str(os.getpid())
         uvicorn.run(self.app, host=self.host, port=self.port)
